@@ -39,6 +39,14 @@ def test_convex_user_flow():
     initial_credits = service.get_credits(telegram_id)
     assert initial_credits > 0
     
+    # Test default model
+    default_model = "fal-ai/flux/dev"
+    service.set_default_model(telegram_id, default_model)
+    
+    user = service.get_user(telegram_id)
+    assert user["default_model"] == default_model
+    
+    print("Convex integration tests passed!")
     deduct_amount = 5.0
     result = service.deduct_credits(telegram_id, deduct_amount)
     assert result["success"] is True

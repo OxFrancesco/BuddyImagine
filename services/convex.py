@@ -1,4 +1,5 @@
 import os
+from typing import Any, Dict
 from convex import ConvexClient
 from dotenv import load_dotenv
 
@@ -13,22 +14,22 @@ class ConvexService:
             raise ValueError("CONVEX_URL environment variable is not set")
         self.client = ConvexClient(convex_url)
 
-    def upsert_user(self, telegram_id: int, first_name: str, username: str | None = None, last_name: str | None = None):
-        # Convex Python client requires explicit float for v.float64 and might need help with Int64 if it defaults to float
-        # However, usually int maps to Int64 or Float64 depending on value. 
-        # If we have issues, we might need to check if there is a specific wrapper.
-        # But based on search, we might need to ensure it's not treated as float.
-        # Let's try to just pass int. If it fails with "Value: ...0", it means it was converted to float.
-        # The fix is likely using a specific type if available, or ensuring the client version supports it.
-        # But since I can't easily check available types, I'll try to just pass it.
-        # Wait, I already tried passing int(telegram_id) and it failed.
-        # I will try to import ConvexInt64.
-        return self.client.mutation("users:upsertUser", {
-            "telegram_id": telegram_id, # The client should handle this if it's a standard int.
-            "username": username,
+    def upsert_user(self, telegram_id: int, first_name: str, username: str | None = None, last_name: str | None = None, default_model: str | None = None):
+        args: Dict[str, Any] = {
+            "telegram_id": telegram_id,
             "first_name": first_name,
-            "last_name": last_name,
-        })
+        }
+        if username is not None:
+            args["username"] = username
+        if last_name is not None:
+            args["last_name"] = last_name
+        if default_model is not None:
+            args["default_model"] = default_model
+            
+        return self.client.mutation("users:upsertUser", args)
+
+    def set_default_model(self, telegram_id: int, model_id: str):
+        return self.client.mutation("users:setDefaultModel", {"telegram_id": telegram_id, "model_id": model_id})
 
     def get_user(self, telegram_id: int):
         return self.client.query("users:getUser", {"telegram_id": telegram_id})

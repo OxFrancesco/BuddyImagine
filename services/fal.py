@@ -18,7 +18,7 @@ class FalService:
         {"id": "fal-ai/stable-diffusion-v3-medium", "name": "SD3 Medium", "description": "Stable Diffusion 3 Medium"},
         {"id": "fal-ai/auraflow", "name": "AuraFlow", "description": "AuraFlow"},
         {"id": "fal-ai/ideogram/v2", "name": "Ideogram V2", "description": "Ideogram V2 - Typography"},
-        {"id": "fal-ai/nanobanana-pro", "name": "Nano Banana", "description": "Nano Banana - Creative & Stylized"},
+        {"id": "fal-ai/nano-banana-pro", "name": "Nano Banana", "description": "Nano Banana - Creative & Stylized"},
         {"id": "fal-ai/hunyuan-video-v1.5/text-to-video", "name": "Hunyuan Video", "description": "Hunyuan Text to Video"},
         {"id": "fal-ai/kling/video", "name": "Kling Video", "description": "Kling Video Generation"},
         {"id": "fal-ai/minimax/video-01/image-to-video", "name": "Minimax Video", "description": "Minimax Image to Video"},
@@ -40,7 +40,7 @@ class FalService:
         "fal-ai/stable-diffusion-v3-medium": 0.03,
         "fal-ai/auraflow": 0.02,
         "fal-ai/ideogram/v2": 0.05,
-        "fal-ai/nanobanana-pro": 0.02,
+        "fal-ai/nano-banana-pro": 0.02,
         # Video models (higher cost)
         "fal-ai/hunyuan-video-v1.5/text-to-video": 0.50,
         "fal-ai/kling/video": 0.50,

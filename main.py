@@ -26,6 +26,7 @@ async def main():
         BotCommand(command="/start", description="Start the bot"),
         BotCommand(command="/generate", description="Generate an image"),
         BotCommand(command="/models", description="List or search FAL models"),
+        BotCommand(command="/setmodel", description="Set default model"),
         BotCommand(command="/help", description="Show help message")
     ]
     await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
