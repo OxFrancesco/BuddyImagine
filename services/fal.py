@@ -3,6 +3,7 @@ import aiohttp
 import logging
 import base64
 from typing import List, Dict
+from rapidfuzz import process, fuzz
 
 logger = logging.getLogger(__name__)
 
@@ -11,12 +12,17 @@ class FalService:
         {"id": "fal-ai/fast-sdxl", "name": "Fast SDXL", "description": "Fast Stable Diffusion XL"},
         {"id": "fal-ai/flux/dev", "name": "Flux Dev", "description": "Flux.1 Dev - High quality"},
         {"id": "fal-ai/flux/schnell", "name": "Flux Schnell", "description": "Flux.1 Schnell - Fast"},
+        {"id": "fal-ai/flux-realism", "name": "Flux Realism", "description": "Flux Realism LoRA"},
         {"id": "fal-ai/recraft/v3", "name": "Recraft V3", "description": "Recraft V3 - Design focused"},
         {"id": "fal-ai/fooocus", "name": "Fooocus", "description": "Fooocus - Easy to use SDXL"},
         {"id": "fal-ai/stable-diffusion-v3-medium", "name": "SD3 Medium", "description": "Stable Diffusion 3 Medium"},
         {"id": "fal-ai/auraflow", "name": "AuraFlow", "description": "AuraFlow"},
         {"id": "fal-ai/ideogram/v2", "name": "Ideogram V2", "description": "Ideogram V2 - Typography"},
-        {"id": "fal-ai/flux-realism", "name": "Flux Realism", "description": "Flux Realism LoRA"},
+        {"id": "fal-ai/nanobanana-pro", "name": "Nano Banana", "description": "Nano Banana - Creative & Stylized"},
+        {"id": "fal-ai/hunyuan-video-v1.5/text-to-video", "name": "Hunyuan Video", "description": "Hunyuan Text to Video"},
+        {"id": "fal-ai/kling/video", "name": "Kling Video", "description": "Kling Video Generation"},
+        {"id": "fal-ai/minimax/video-01/image-to-video", "name": "Minimax Video", "description": "Minimax Image to Video"},
+        {"id": "fal-ai/luma-dream-machine", "name": "Luma Dream Machine", "description": "Luma Dream Machine Video"},
     ]
 
     def __init__(self):
@@ -30,24 +36,45 @@ class FalService:
         # Direct FAL API URL
         self.base_url = "https://fal.run"
 
-    def search_models(self, query: str) -> List[Dict[str, str]]:
+    def search_models(self, query: str, limit: int = 5) -> List[Dict[str, str]]:
         """
-        Fuzzy searches for models based on the query.
+        Fuzzy searches for models based on the query using rapidfuzz.
         
         Args:
-            query: The search query (e.g., "flux", "sdxl").
+            query: The search query.
+            limit: Maximum number of results to return.
             
         Returns:
-            A list of matching model dictionaries.
+            A list of matching model dictionaries, sorted by relevance.
         """
-        query = query.lower()
-        results = []
-        for model in self.KNOWN_MODELS:
-            if (query in model["id"].lower() or 
-                query in model["name"].lower() or 
-                query in model["description"].lower()):
-                results.append(model)
-        return results
+        if not query:
+            return self.KNOWN_MODELS[:limit]
+
+        # Prepare choices for fuzzy matching. 
+        # We match against a combined string of name + description + id to cover all bases.
+        choices = {
+            i: f"{model['name']} {model['description']} {model['id']}" 
+            for i, model in enumerate(self.KNOWN_MODELS)
+        }
+        
+        # Extract top matches
+        # result format: (combined_string, score, index)
+        results = process.extract(
+            query, 
+            choices, 
+            scorer=fuzz.WRatio, 
+            limit=limit,
+            score_cutoff=50 # Minimum score to consider a match
+        )
+        
+        matched_models = []
+        for match in results:
+            # match structure in rapidfuzz 3.x: (match_string, score, key)
+            # Since we passed a dict, key is the index 'i'
+            index = match[2]
+            matched_models.append(self.KNOWN_MODELS[index])
+            
+        return matched_models
 
     async def generate_image(self, prompt: str, model: str = "fal-ai/fast-sdxl") -> bytes:
         """
