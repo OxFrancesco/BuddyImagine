@@ -15,7 +15,7 @@ r2_service = R2Service()
 async def cmd_start(message: Message):
     await message.answer(
         "Hello! I can generate images for you using FAL AI.\n"
-        "Try /generate <prompt> to create an image."
+        "Try /generate &lt;prompt&gt; to create an image."
     )
 
 @router.message(Command("generate"))
@@ -43,8 +43,24 @@ async def cmd_generate(message: Message):
         
         result = await agent.run(prompt, deps=deps)
         
-        # The result.data should contain the final response from the agent (the filename or message)
-        await status_msg.edit_text(f"✅ Agent finished: {result.data}")
+        # The result.output should contain the final response from the agent (the filename)
+        filename = result.output
+        
+        # Download the image from R2 to send it to the user
+        try:
+            image_data = await r2_service.download_file(filename)
+            await message.answer_photo(
+                BufferedInputFile(image_data, filename=filename),
+                caption=f"✅ Generated and saved as: {filename}"
+            )
+            await status_msg.delete() # Remove the "thinking" message
+        except Exception as download_error:
+             await status_msg.edit_text(f"✅ Agent finished: {filename}\n⚠️ Failed to send image back: {str(download_error)}")
 
     except Exception as e:
-        await status_msg.edit_text(f"❌ Error: {str(e)}")
+        error_msg = str(e)
+        if len(error_msg) > 1000:
+            error_msg = error_msg[:1000] + "... (truncated)"
+        await status_msg.edit_text(f"❌ Error: {error_msg}")
+        # Print full error to console for debugging
+        print(f"FULL ERROR: {e}")

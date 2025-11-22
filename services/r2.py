@@ -1,5 +1,6 @@
 import os
 import aioboto3
+from typing import cast
 import logging
 from botocore.exceptions import ClientError
 
@@ -24,15 +25,17 @@ class R2Service:
         Args:
             file_data: The binary content of the file.
             filename: The name to save the file as.
-            content_type: The MIME type of the file. Defaults to "image/jpeg".
+            content_type: The MIME type of the file.
             
         Returns:
-            The filename (key) of the uploaded file.
+            The filename of the uploaded file.
         """
         async with self.session.client("s3",
-                                       endpoint_url=self.endpoint_url,
-                                       aws_access_key_id=self.access_key,
-                                       aws_secret_access_key=self.secret_key) as s3:
+            endpoint_url=self.endpoint_url,
+            aws_access_key_id=self.access_key,
+            aws_secret_access_key=self.secret_key,
+            region_name="auto" # R2 requires region to be 'auto'
+        ) as s3:
             try:
                 await s3.put_object(
                     Bucket=self.bucket_name,
@@ -41,13 +44,31 @@ class R2Service:
                     ContentType=content_type
                 )
                 logger.info(f"Successfully uploaded {filename} to R2")
-                
-                # Return a theoretical public URL. 
-                # Note: You need to configure a custom domain or public bucket access in Cloudflare for this to be directly accessible via HTTP.
-                # If using the R2.dev subdomain, it would look like https://pub-<hash>.r2.dev/<filename>
-                # For now, we'll return the filename/key.
                 return filename
                 
             except ClientError as e:
                 logger.error(f"Failed to upload to R2: {e}")
+                raise
+
+    async def download_file(self, filename: str) -> bytes:
+        """
+        Downloads a file from Cloudflare R2.
+        
+        Args:
+            filename: The name of the file to download.
+            
+        Returns:
+            The binary content of the file.
+        """
+        async with self.session.client("s3",
+            endpoint_url=self.endpoint_url,
+            aws_access_key_id=self.access_key,
+            aws_secret_access_key=self.secret_key,
+            region_name="auto"
+        ) as s3:
+            try:
+                response = await s3.get_object(Bucket=self.bucket_name, Key=filename)
+                return cast(bytes, await response['Body'].read())
+            except ClientError as e:
+                logger.error(f"Failed to download {filename} from R2: {e}")
                 raise
