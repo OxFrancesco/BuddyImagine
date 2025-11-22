@@ -6,3 +6,7 @@ __pycache__/
 .idea/
 .vscode/
 mypy.ini
+
+.env.local
+node_modules/
+convex/_generated/

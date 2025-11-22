@@ -25,6 +25,31 @@ class FalService:
         {"id": "fal-ai/luma-dream-machine", "name": "Luma Dream Machine", "description": "Luma Dream Machine Video"},
     ]
 
+    # Pricing table (approximate cost per megapixel or per generation)
+    # Based on research:
+    # Flux Dev/Pro: ~$0.025 - $0.05 per MP
+    # Fast SDXL: ~$0.001 - $0.005 (often very cheap)
+    # Video models: significantly more expensive
+    PRICING_TABLE = {
+        "fal-ai/fast-sdxl": 0.005, # Estimate
+        "fal-ai/flux/dev": 0.03,
+        "fal-ai/flux/schnell": 0.01,
+        "fal-ai/flux-realism": 0.03,
+        "fal-ai/recraft/v3": 0.04,
+        "fal-ai/fooocus": 0.01,
+        "fal-ai/stable-diffusion-v3-medium": 0.03,
+        "fal-ai/auraflow": 0.02,
+        "fal-ai/ideogram/v2": 0.05,
+        "fal-ai/nanobanana-pro": 0.02,
+        # Video models (higher cost)
+        "fal-ai/hunyuan-video-v1.5/text-to-video": 0.50,
+        "fal-ai/kling/video": 0.50,
+        "fal-ai/minimax/video-01/image-to-video": 0.50,
+        "fal-ai/luma-dream-machine": 0.50,
+    }
+    
+    DEFAULT_COST = 0.05
+
     def __init__(self):
         self.fal_key = os.getenv("FAL_KEY")
         # self.cf_account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID")
@@ -35,6 +60,12 @@ class FalService:
 
         # Direct FAL API URL
         self.base_url = "https://fal.run"
+
+    def estimate_cost(self, model: str) -> float:
+        """
+        Estimates the cost of a generation for a given model.
+        """
+        return self.PRICING_TABLE.get(model, self.DEFAULT_COST)
 
     def search_models(self, query: str, limit: int = 5) -> List[Dict[str, str]]:
         """

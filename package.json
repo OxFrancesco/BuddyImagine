@@ -1,0 +1,27 @@
+{
+  "name": "buddyimagine",
+  "version": "1.0.0",
+  "description": "BuddyImagine is a Telegram bot that leverages the power of [FAL AI](https://fal.ai) for high-quality image generation and Cloudflare R2 for efficient storage.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OxFrancesco/BuddyImagine.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/OxFrancesco/BuddyImagine/issues"
+  },
+  "homepage": "https://github.com/OxFrancesco/BuddyImagine#readme",
+  "dependencies": {
+    "convex": "^1.29.3"
+  }
+}
