@@ -15,8 +15,40 @@ r2_service = R2Service()
 async def cmd_start(message: Message):
     await message.answer(
         "Hello! I can generate images for you using FAL AI.\n"
-        "Try /generate &lt;prompt&gt; to create an image."
+        "Commands:\n"
+        "/generate <prompt> - Create an image (you can specify model in prompt!)\n"
+        "/models [query] - List or search available models\n"
+        "/help - Show this help message"
     )
+
+@router.message(Command("help"))
+async def cmd_help(message: Message):
+    await cmd_start(message)
+
+@router.message(Command("models"))
+async def cmd_models(message: Message):
+    if not message.text:
+        return
+
+    query = message.text.replace("/models", "", 1).strip()
+    
+    if query:
+        results = fal_service.search_models(query)
+        if not results:
+            await message.answer(f"No models found matching '{query}'.")
+            return
+        
+        response = f"🔍 **Models matching '{query}':**\n\n"
+        for model in results:
+            response += f"• `{model['id']}`\n  _{model['name']}_: {model['description']}\n\n"
+    else:
+        # List all known models
+        response = "📚 **Available Models:**\n\n"
+        for model in fal_service.KNOWN_MODELS:
+            response += f"• `{model['id']}`\n  _{model['name']}_: {model['description']}\n\n"
+        response += "To search, use `/models <query>`."
+
+    await message.answer(response, parse_mode="Markdown")
 
 @router.message(Command("generate"))
 async def cmd_generate(message: Message):

@@ -2,10 +2,23 @@ import os
 import aiohttp
 import logging
 import base64
+from typing import List, Dict
 
 logger = logging.getLogger(__name__)
 
 class FalService:
+    KNOWN_MODELS = [
+        {"id": "fal-ai/fast-sdxl", "name": "Fast SDXL", "description": "Fast Stable Diffusion XL"},
+        {"id": "fal-ai/flux/dev", "name": "Flux Dev", "description": "Flux.1 Dev - High quality"},
+        {"id": "fal-ai/flux/schnell", "name": "Flux Schnell", "description": "Flux.1 Schnell - Fast"},
+        {"id": "fal-ai/recraft/v3", "name": "Recraft V3", "description": "Recraft V3 - Design focused"},
+        {"id": "fal-ai/fooocus", "name": "Fooocus", "description": "Fooocus - Easy to use SDXL"},
+        {"id": "fal-ai/stable-diffusion-v3-medium", "name": "SD3 Medium", "description": "Stable Diffusion 3 Medium"},
+        {"id": "fal-ai/auraflow", "name": "AuraFlow", "description": "AuraFlow"},
+        {"id": "fal-ai/ideogram/v2", "name": "Ideogram V2", "description": "Ideogram V2 - Typography"},
+        {"id": "fal-ai/flux-realism", "name": "Flux Realism", "description": "Flux Realism LoRA"},
+    ]
+
     def __init__(self):
         self.fal_key = os.getenv("FAL_KEY")
         # self.cf_account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID")
@@ -16,6 +29,25 @@ class FalService:
 
         # Direct FAL API URL
         self.base_url = "https://fal.run"
+
+    def search_models(self, query: str) -> List[Dict[str, str]]:
+        """
+        Fuzzy searches for models based on the query.
+        
+        Args:
+            query: The search query (e.g., "flux", "sdxl").
+            
+        Returns:
+            A list of matching model dictionaries.
+        """
+        query = query.lower()
+        results = []
+        for model in self.KNOWN_MODELS:
+            if (query in model["id"].lower() or 
+                query in model["name"].lower() or 
+                query in model["description"].lower()):
+                results.append(model)
+        return results
 
     async def generate_image(self, prompt: str, model: str = "fal-ai/fast-sdxl") -> bytes:
         """

@@ -13,18 +13,23 @@ agent = Agent(
     system_prompt=(
         "When a user asks to generate an image, use the 'generate_and_save_image' tool. "
         "This tool will handle both generation and uploading. "
-        "Return ONLY the filename of the uploaded image as your final response, with no other text."
+        "Return ONLY the filename of the uploaded image as your final response, with no other text.\n"
+        "If the user specifies a model (e.g., 'flux', 'sdxl', 'recraft', 'ideogram', or a specific model ID), "
+        "pass it to the tool as the 'model' argument. "
+        "Common mappings: 'flux' -> 'fal-ai/flux/dev', 'fast' -> 'fal-ai/flux/schnell', 'sdxl' -> 'fal-ai/fast-sdxl'. "
+        "If no model is specified, do not set the model argument (it will default to SDXL)."
     ),
 )
 
 @agent.tool
-async def generate_and_save_image(ctx: RunContext[dict], prompt: str) -> str:
+async def generate_and_save_image(ctx: RunContext[dict], prompt: str, model: str | None = None) -> str:
     """
     Generates an image based on the prompt and uploads it to cloud storage.
     
     Args:
         ctx: The run context containing dependencies.
         prompt: The description of the image.
+        model: Optional. The specific model ID to use (e.g., 'fal-ai/flux/dev').
         
     Returns:
         The filename of the saved image.
@@ -33,7 +38,10 @@ async def generate_and_save_image(ctx: RunContext[dict], prompt: str) -> str:
     r2_service: R2Service = ctx.deps['r2_service']
     
     # Generate
-    image_data = await fal_service.generate_image(prompt)
+    if model:
+        image_data = await fal_service.generate_image(prompt, model=model)
+    else:
+        image_data = await fal_service.generate_image(prompt)
     
     # Upload
     filename = f"{uuid.uuid4()}.jpg"
