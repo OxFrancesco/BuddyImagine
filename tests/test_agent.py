@@ -14,7 +14,8 @@ async def test_generate_and_save_image_default(mock_fal_service: AsyncMock, mock
     mock_ctx = MagicMock()
     mock_ctx.deps = deps
     
-    mock_fal_service.generate_image.return_value = b"fake_image_data"
+    # mock_fal_service is already configured by conftest to return valid image bytes.
+    # We remove the explicit override that sets it back to invalid bytes.
     
     # Test without model arg
     filename = await generate_and_save_image(cast(RunContext[dict], mock_ctx), "test prompt")
@@ -35,7 +36,7 @@ async def test_generate_and_save_image_with_model(mock_fal_service: AsyncMock, m
     mock_ctx = MagicMock()
     mock_ctx.deps = deps
     
-    mock_fal_service.generate_image.return_value = b"fake_image_data"
+    # mock_fal_service is already configured by conftest to return valid image bytes.
     
     # Test with model arg
     filename = await generate_and_save_image(cast(RunContext[dict], mock_ctx), "test prompt", model="custom/model")

@@ -261,6 +261,10 @@ async def run_generation_safe(message: Message, prompt: str, model_id: str | Non
         cost = fal_service.estimate_cost(model_id)
         credits_needed = cost / 0.10 # 1 credit = $0.10
         
+        # Check for uncompressed request
+        if "uncompressed" in prompt.lower() or "high quality" in prompt.lower() or "original quality" in prompt.lower():
+             credits_needed *= 1.2
+
         # Append model instruction if not already present
         if "using model" not in prompt.lower():
              prompt += f" using model {model_id}"
