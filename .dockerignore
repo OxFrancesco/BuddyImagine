@@ -1,0 +1,68 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv
+env
+ENV
+.mypy_cache
+.pytest_cache
+.coverage
+htmlcov
+*.egg-info
+dist
+build
+
+# Node.js (not needed for bot container)
+node_modules
+package.json
+package-lock.json
+
+# Convex (separate deployment)
+convex
+
+# Environment files (will be mounted or passed at runtime)
+.env
+.env.local
+.env.*.local
+
+# IDE and editor
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Tests (not needed in production)
+tests
+pytest.ini
+.coverage
+
+# Documentation (optional - remove if you want docs in container)
+*.md
+!README.md
+
+# Lock files (uv.lock is needed for reproducible builds)
+# Uncomment if you don't want lock file in image
+# uv.lock
+
+# Misc
+*.log
+*.tmp
+.python-version
