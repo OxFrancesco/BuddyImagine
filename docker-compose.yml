@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  buddyimagine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: buddyimagine-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Optionally override specific variables here
+      # TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      # FAL_KEY: ${FAL_KEY}
+      # OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      # R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      # R2_BUCKET_NAME: ${R2_BUCKET_NAME}
+      # R2_ENDPOINT_URL: ${R2_ENDPOINT_URL}
+      TZ: UTC
+    networks:
+      - buddyimagine-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Resource limits (adjust based on your VPS)
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+
+networks:
+  buddyimagine-network:
+    driver: bridge
