@@ -123,3 +123,140 @@ export const getCredits = query({
         return user ? user.credits : 0;
     },
 });
+
+export const updateUserSettings = mutation({
+    args: {
+        telegram_id: v.number(),
+        save_uncompressed_to_r2: v.optional(v.boolean()),
+        telegram_quality: v.optional(v.string()),
+        notify_low_credits: v.optional(v.boolean()),
+        low_credit_threshold: v.optional(v.float64()),
+    },
+    handler: async (ctx, args) => {
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_telegram_id", (q) => q.eq("telegram_id", args.telegram_id))
+            .first();
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const updates: Record<string, boolean | string | number> = {};
+        if (args.save_uncompressed_to_r2 !== undefined) {
+            updates.save_uncompressed_to_r2 = args.save_uncompressed_to_r2;
+        }
+        if (args.telegram_quality !== undefined) {
+            updates.telegram_quality = args.telegram_quality;
+        }
+        if (args.notify_low_credits !== undefined) {
+            updates.notify_low_credits = args.notify_low_credits;
+        }
+        if (args.low_credit_threshold !== undefined) {
+            updates.low_credit_threshold = args.low_credit_threshold;
+        }
+
+        await ctx.db.patch(user._id, updates);
+        return { success: true };
+    },
+});
+
+export const getUserSettings = query({
+    args: { telegram_id: v.number() },
+    handler: async (ctx, args) => {
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_telegram_id", (q) => q.eq("telegram_id", args.telegram_id))
+            .first();
+
+        if (!user) {
+            return null;
+        }
+
+        return {
+            telegram_id: user.telegram_id,
+            credits: user.credits,
+            default_model: user.default_model ?? "fal-ai/fast-sdxl",
+            save_uncompressed_to_r2: user.save_uncompressed_to_r2 ?? false,
+            telegram_quality: user.telegram_quality ?? "uncompressed",
+            notify_low_credits: user.notify_low_credits ?? true,
+            low_credit_threshold: user.low_credit_threshold ?? 10,
+        };
+    },
+});
+
+export const deductCreditsWithLog = mutation({
+    args: {
+        telegram_id: v.number(),
+        amount: v.float64(),
+        type: v.string(),
+        description: v.string(),
+        model_used: v.optional(v.string()),
+        r2_filename: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_telegram_id", (q) => q.eq("telegram_id", args.telegram_id))
+            .first();
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        if (user.credits < args.amount) {
+            return { success: false, message: "Insufficient credits", current_credits: user.credits };
+        }
+
+        const newBalance = user.credits - args.amount;
+
+        await ctx.db.patch(user._id, { credits: newBalance });
+
+        await ctx.db.insert("credit_logs", {
+            telegram_id: args.telegram_id,
+            amount: -args.amount,
+            balance_after: newBalance,
+            type: args.type,
+            description: args.description,
+            model_used: args.model_used,
+            r2_filename: args.r2_filename,
+            created_at: Date.now(),
+        });
+
+        return { success: true, current_credits: newBalance };
+    },
+});
+
+export const addCreditsWithLog = mutation({
+    args: {
+        telegram_id: v.number(),
+        amount: v.float64(),
+        type: v.string(),
+        description: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_telegram_id", (q) => q.eq("telegram_id", args.telegram_id))
+            .first();
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const newBalance = user.credits + args.amount;
+
+        await ctx.db.patch(user._id, { credits: newBalance });
+
+        await ctx.db.insert("credit_logs", {
+            telegram_id: args.telegram_id,
+            amount: args.amount,
+            balance_after: newBalance,
+            type: args.type,
+            description: args.description,
+            created_at: Date.now(),
+        });
+
+        return { success: true, current_credits: newBalance };
+    },
+});

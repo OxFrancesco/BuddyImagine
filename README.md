@@ -69,3 +69,5 @@ BuddyImagine is a Telegram bot that leverages the power of [FAL AI](https://fal.
 *   **`services/`**:
     *   `fal.py`: Service for interacting with FAL AI API.
     *   `r2.py`: Service for uploading/downloading files to Cloudflare R2.
+
+     docker-compose down && docker-compose build --no-cache && docker-compose up -d

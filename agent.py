@@ -7,10 +7,10 @@ from services.fal import FalService
 from services.r2 import R2Service
 
 # Define the agent
-# Note: You need to set OPENAI_API_KEY or configure another model provider.
-# By default, pydantic-ai uses OpenAI's gpt-4o.
+# Note: You need to set OPENROUTER_API_KEY environment variable.
+# Using OpenRouter with Claude Haiku 4.5.
 agent = Agent(
-    'openai:gpt-4o',
+    'openrouter:anthropic/claude-haiku-4.5',
     deps_type=dict,
     system_prompt=(
         "When a user asks to generate an image, use the 'generate_and_save_image' tool. "
