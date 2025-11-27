@@ -490,6 +490,11 @@ async def run_generation_safe(message: Message, prompt: str, model_id: str | Non
             )
             await status_msg.delete()
             
+            # Save to conversation history
+            if convex_service:
+                convex_service.save_message(user_id, "user", f"Generate: {prompt}")
+                convex_service.save_message(user_id, "assistant", f"Generated image {r2_filename} using {model_id}")
+            
             # Check for low credit warning
             new_balance = convex_service.get_credits(user_id) if convex_service else 0
             threshold = user_settings.get("low_credit_threshold", 10)
@@ -645,9 +650,9 @@ async def handle_natural_message(message: Message, state: FSMContext):
                 await status_msg.edit_text(f"🤔 {question}")
             return
         
-        # Save conversation to Convex
+        # Save conversation to Convex (use original_text, not lowercase user_text)
         if convex_service:
-            convex_service.save_message(user_id, "user", user_text)
+            convex_service.save_message(user_id, "user", original_text)
             convex_service.save_message(user_id, "assistant", agent_response)
         
         if not agent_response or "Error" in agent_response:
@@ -725,8 +730,14 @@ async def process_clarification_callback(callback: CallbackQuery, state: FSMCont
     status_msg = await callback.message.edit_text("🤖 Agent is continuing...")
     
     try:
+        # Fetch conversation history
+        message_history = []
+        if convex_service:
+            stored_messages = convex_service.get_messages(callback.from_user.id, limit=20)
+            message_history = build_message_history(stored_messages)
+        
         deps = {'fal_service': fal_service, 'r2_service': r2_service}
-        result = await agent.run(clarified_prompt, deps=deps)
+        result = await agent.run(clarified_prompt, deps=deps, message_history=message_history)
         agent_response = str(result.output)
         
         # Save to Convex
