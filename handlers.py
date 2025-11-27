@@ -1,5 +1,6 @@
 import uuid
 import io
+import re
 from PIL import Image
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
@@ -14,6 +15,7 @@ from agent import agent
 
 class GenState(StatesGroup):
     selecting_model = State()
+    awaiting_clarification = State()
 
 router = Router()
 # Initialize services to pass as dependencies
@@ -361,7 +363,8 @@ async def process_gen_model_callback(callback: CallbackQuery, state: FSMContext)
 
     model_id = callback.data.split(":")[1]
     data = await state.get_data()
-    prompt = data.get("prompt")
+    # Support both old "prompt" key and new "generation_prompt" key
+    prompt = data.get("generation_prompt") or data.get("prompt")
     
     if not isinstance(prompt, str):
         await callback.answer("Session expired or invalid data.")
@@ -538,13 +541,66 @@ def build_message_history(messages: list) -> list:
 
 
 @router.message(F.text & ~F.text.startswith("/"))
-async def handle_natural_message(message: Message):
-    """Handle natural language messages using the AI agent with conversation memory."""
+async def handle_natural_message(message: Message, state: FSMContext):
+    """Handle natural language messages - detect image generation requests with model hints."""
     if not message.text or not message.from_user:
         return
     
     user_id = message.from_user.id
-    user_text = message.text
+    user_text = message.text.lower()
+    original_text = message.text
+    
+    # Check if this looks like an image generation request
+    generation_keywords = ["generate", "create", "make", "draw", "imagine", "picture", "image", "photo"]
+    is_generation_request = any(kw in user_text for kw in generation_keywords)
+    
+    # Known model keywords to detect
+    model_keywords = ["flux", "nano banana", "banana", "recraft", "ideogram", "sdxl", "fooocus", "aura", "hunyuan", "kling", "luma", "minimax"]
+    detected_model_hint = None
+    for kw in model_keywords:
+        if kw in user_text:
+            detected_model_hint = kw
+            break
+    
+    # If we detected a model hint, search and let user pick
+    if is_generation_request and detected_model_hint:
+        matches = fal_service.search_models(detected_model_hint, limit=5)
+        
+        if matches:
+            # Extract the prompt (remove model reference)
+            prompt = original_text
+            for kw in model_keywords:
+                prompt = re.sub(rf'\b{kw}\b', '', prompt, flags=re.IGNORECASE)
+            for kw in generation_keywords:
+                prompt = re.sub(rf'\b{kw}\b', '', prompt, flags=re.IGNORECASE)
+            prompt = re.sub(r'\s+', ' ', prompt).strip()
+            prompt = re.sub(r'^(a |an |the |with |using )+', '', prompt, flags=re.IGNORECASE).strip()
+            if not prompt:
+                prompt = "a beautiful image"
+            
+            # Store prompt and show model picker
+            await state.update_data(generation_prompt=prompt)
+            await state.set_state(GenState.selecting_model)
+            
+            keyboard = []
+            for m in matches[:5]:
+                cost = fal_service.estimate_cost(m['id'])
+                credits = (cost / 0.10) * 1.15
+                keyboard.append([InlineKeyboardButton(
+                    text=f"{m['name']} (~{credits:.2f} credits)", 
+                    callback_data=f"gen_model:{m['id']}"
+                )])
+            
+            await message.answer(
+                f"🎨 Ready to generate: *{prompt}*\n\n"
+                f"Found {len(matches)} model(s) matching '{detected_model_hint}'.\n"
+                f"Please select a model:",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+                parse_mode="Markdown"
+            )
+            return
+    
+    # Otherwise, fall back to agent for general conversation or simple generation
     status_msg = await message.answer("🤖 Agent is thinking...")
     
     # Check credits
@@ -563,8 +619,31 @@ async def handle_natural_message(message: Message):
         
         # Run agent with history
         deps = {'fal_service': fal_service, 'r2_service': r2_service}
-        result = await agent.run(user_text, deps=deps, message_history=message_history)
+        result = await agent.run(original_text, deps=deps, message_history=message_history)
         agent_response = str(result.output)
+        
+        # Handle clarification requests from the agent
+        if agent_response.startswith("CLARIFICATION_NEEDED|"):
+            parts = agent_response.split("|")
+            question = parts[1] if len(parts) > 1 else "Please clarify"
+            options_str = parts[2] if len(parts) > 2 else ""
+            
+            # Store context for when user responds
+            await state.update_data(original_prompt=user_text, message_history=message_history)
+            await state.set_state(GenState.awaiting_clarification)
+            
+            if options_str:
+                options = [opt.strip() for opt in options_str.split(",") if opt.strip()]
+                keyboard = []
+                for opt in options[:6]:  # Limit to 6 options
+                    keyboard.append([InlineKeyboardButton(text=opt, callback_data=f"clarify:{opt}")])
+                await status_msg.edit_text(
+                    f"🤔 {question}",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+                )
+            else:
+                await status_msg.edit_text(f"🤔 {question}")
+            return
         
         # Save conversation to Convex
         if convex_service:
@@ -575,17 +654,49 @@ async def handle_natural_message(message: Message):
             await status_msg.edit_text(f"🤖 Agent response: {agent_response}")
             return
         
-        # If it looks like a filename, try to download and send the image
-        if agent_response.endswith(('.jpg', '.jpeg', '.png')):
+        # Extract filename from response (agent may include extra text)
+        # Response format: "filename.jpg|model-id" or just contains the filename
+        filename_match = re.search(r'([a-f0-9\-]{36}\.(?:jpg|jpeg|png))', agent_response)
+        
+        if filename_match:
+            filename = filename_match.group(1)
+            
+            # Extract model from response for credit calculation
+            model_used = "fal-ai/fast-sdxl"  # default
+            if "|" in agent_response:
+                parts = agent_response.split("|")
+                for part in parts:
+                    if part.strip().startswith("fal-ai/"):
+                        model_used = part.strip()
+                        break
+            
+            # Deduct credits
+            credits_deducted = 0.0
+            if convex_service:
+                api_cost = fal_service.estimate_cost(model_used)
+                credits_needed = (api_cost / 0.10) * 1.15  # 15% markup
+                result = convex_service.deduct_credits_with_log(
+                    telegram_id=user_id,
+                    amount=credits_needed,
+                    log_type="generation",
+                    description=f"Generation: {user_text[:50]}{'...' if len(user_text) > 50 else ''}",
+                    model_used=model_used,
+                )
+                if result and result.get("success"):
+                    credits_deducted = credits_needed
+            
             try:
-                image_data = await r2_service.download_file(agent_response)
+                image_data = await r2_service.download_file(filename)
+                caption = f"✅ Generated: {filename}"
+                if credits_deducted > 0:
+                    caption += f"\n💰 Cost: {credits_deducted:.2f} credits"
                 await message.answer_photo(
-                    BufferedInputFile(image_data, filename=agent_response),
-                    caption=f"✅ Generated: {agent_response}"
+                    BufferedInputFile(image_data, filename=filename),
+                    caption=caption
                 )
                 await status_msg.delete()
             except Exception:
-                await status_msg.edit_text(f"✅ Generated: {agent_response}")
+                await status_msg.edit_text(f"✅ Generated: {filename}")
         else:
             await status_msg.edit_text(f"🤖 {agent_response}")
             
@@ -594,3 +705,79 @@ async def handle_natural_message(message: Message):
         if len(error_msg) > 500:
             error_msg = error_msg[:500] + "..."
         await status_msg.edit_text(f"❌ Error: {error_msg}\n\n💡 Tip: Use /generate <prompt> for direct generation.")
+
+
+@router.callback_query(F.data.startswith("clarify:"))
+async def process_clarification_callback(callback: CallbackQuery, state: FSMContext):
+    """Handle user's response to a clarification question."""
+    if not callback.data or not callback.message or not isinstance(callback.message, Message):
+        return
+    
+    user_choice = callback.data.split(":", 1)[1]
+    data = await state.get_data()
+    original_prompt = data.get("original_prompt", "")
+    
+    await state.clear()
+    
+    # Combine original prompt with user's clarification
+    clarified_prompt = f"{original_prompt} (User chose: {user_choice})"
+    
+    status_msg = await callback.message.edit_text("🤖 Agent is continuing...")
+    
+    try:
+        deps = {'fal_service': fal_service, 'r2_service': r2_service}
+        result = await agent.run(clarified_prompt, deps=deps)
+        agent_response = str(result.output)
+        
+        # Save to Convex
+        if convex_service:
+            convex_service.save_message(callback.from_user.id, "user", clarified_prompt)
+            convex_service.save_message(callback.from_user.id, "assistant", agent_response)
+        
+        filename_match = re.search(r'([a-f0-9\-]{36}\.(?:jpg|jpeg|png))', agent_response)
+        
+        if filename_match:
+            filename = filename_match.group(1)
+            
+            # Extract model from response for credit calculation
+            model_used = "fal-ai/fast-sdxl"
+            if "|" in agent_response:
+                parts = agent_response.split("|")
+                for part in parts:
+                    if part.strip().startswith("fal-ai/"):
+                        model_used = part.strip()
+                        break
+            
+            # Deduct credits
+            credits_deducted = 0.0
+            if convex_service:
+                api_cost = fal_service.estimate_cost(model_used)
+                credits_needed = (api_cost / 0.10) * 1.15
+                result = convex_service.deduct_credits_with_log(
+                    telegram_id=callback.from_user.id,
+                    amount=credits_needed,
+                    log_type="generation",
+                    description=f"Generation: {original_prompt[:50]}",
+                    model_used=model_used,
+                )
+                if result and result.get("success"):
+                    credits_deducted = credits_needed
+            
+            try:
+                image_data = await r2_service.download_file(filename)
+                caption = f"✅ Generated: {filename}"
+                if credits_deducted > 0:
+                    caption += f"\n💰 Cost: {credits_deducted:.2f} credits"
+                await callback.message.answer_photo(
+                    BufferedInputFile(image_data, filename=filename),
+                    caption=caption
+                )
+                await status_msg.delete()
+            except Exception:
+                await status_msg.edit_text(f"✅ Generated: {filename}")
+        else:
+            await status_msg.edit_text(f"🤖 {agent_response}")
+            
+    except Exception as e:
+        error_msg = str(e)[:500]
+        await status_msg.edit_text(f"❌ Error: {error_msg}")

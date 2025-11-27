@@ -13,23 +13,64 @@ agent = Agent(
     'openrouter:anthropic/claude-haiku-4.5',
     deps_type=dict,
     system_prompt=(
-        "When a user asks to generate an image, use the 'generate_and_save_image' tool. "
-        "This tool will handle both generation and uploading. "
-        "Return ONLY the filename of the uploaded image as your final response, with no other text.\n"
-        "If the user specifies a model (e.g., 'flux', 'sdxl', 'recraft', 'ideogram', or a specific model ID), "
-        "pass it to the tool as the 'model' argument. "
-        "If the user asks for 'uncompressed', 'high quality', or 'original quality' image, set the 'uncompressed' argument to True. "
-        "Otherwise, leave 'uncompressed' as False (default). "
-        "Common mappings: 'flux' -> 'fal-ai/flux/dev', 'fast' -> 'fal-ai/flux/schnell', 'sdxl' -> 'fal-ai/fast-sdxl'. "
-        "If no model is specified, do not set the model argument (it will default to SDXL)."
+        "You are an image generation assistant. Call generate_and_save_image to create images.\n\n"
+        "IMPORTANT: If the user mentions a model name (flux, nano banana, recraft, ideogram, sdxl, etc.), "
+        "pass it to the 'model_hint' parameter and the tool will find the correct model.\n"
+        "Examples:\n"
+        "- 'a cat with flux' -> generate_and_save_image(prompt='a cat', model_hint='flux')\n"
+        "- 'bird with nano banana' -> generate_and_save_image(prompt='a bird', model_hint='nano banana')\n"
+        "- 'just a dog' -> generate_and_save_image(prompt='a dog') (no model_hint needed)\n\n"
+        "For quality: 'uncompressed', 'high quality', 'original' -> set uncompressed=True\n"
+        "Return ONLY the raw result from generate_and_save_image."
     ),
 )
+
+@agent.tool
+async def search_available_models(ctx: RunContext[dict], query: str = "") -> str:
+    """
+    Search available image generation models by name or keyword.
+    Returns a list of matching models with their IDs and descriptions.
+    Use this when the user mentions a model name or you need to find the right model.
+    
+    Args:
+        ctx: The run context containing dependencies.
+        query: Search query (model name, keyword, or partial match).
+    """
+    fal_service: FalService = ctx.deps['fal_service']
+    matches = fal_service.search_models(query, limit=5)
+    
+    if not matches:
+        all_names = ", ".join([m['name'] for m in fal_service.KNOWN_MODELS[:5]])
+        return f"No models found matching '{query}'. Available models include: {all_names}"
+    
+    result = f"Found {len(matches)} model(s) matching '{query}':\n"
+    for m in matches:
+        result += f"- {m['name']}: {m['id']} ({m['description']})\n"
+    return result
+
+
+@agent.tool
+async def ask_user_clarification(ctx: RunContext[dict], question: str, options: list[str] | None = None) -> str:
+    """
+    Ask the user a clarifying question when you need more information.
+    Use when multiple models match or the request is ambiguous.
+    
+    Args:
+        ctx: The run context containing dependencies.
+        question: The question to ask the user.
+        options: Optional list of choices to present (e.g., model IDs).
+    """
+    if options:
+        return f"CLARIFICATION_NEEDED|{question}|{','.join(options)}"
+    return f"CLARIFICATION_NEEDED|{question}|"
+
 
 @agent.tool
 async def generate_and_save_image(
     ctx: RunContext[dict],
     prompt: str,
     model: str | None = None,
+    model_hint: str | None = None,
     uncompressed: bool = False
 ) -> str:
     """
@@ -37,19 +78,28 @@ async def generate_and_save_image(
     
     Args:
         ctx: The run context containing dependencies.
-        prompt: The description of the image.
-        model: Optional. The specific model ID to use (e.g., 'fal-ai/flux/dev').
+        prompt: The description of the image to generate.
+        model: The exact model ID if known (e.g., 'fal-ai/flux/dev').
+        model_hint: A model name/keyword to search for (e.g., 'nano banana', 'flux', 'recraft').
+                   If provided, will fuzzy-search and use the best matching model.
         uncompressed: If True, saves the image with higher quality (costs more). Default is False (compressed).
         
     Returns:
-        The filename of the saved image.
+        The filename and model used, separated by |
     """
     fal_service: FalService = ctx.deps['fal_service']
     r2_service: R2Service = ctx.deps['r2_service']
     
+    # Resolve model from hint if provided
+    resolved_model = model
+    if model_hint and not model:
+        matches = fal_service.search_models(model_hint, limit=1)
+        if matches:
+            resolved_model = matches[0]['id']
+    
     # Generate
-    if model:
-        image_data = await fal_service.generate_image(prompt, model=model)
+    if resolved_model:
+        image_data = await fal_service.generate_image(prompt, model=resolved_model)
     else:
         image_data = await fal_service.generate_image(prompt)
     
@@ -74,4 +124,6 @@ async def generate_and_save_image(
     filename = f"{uuid.uuid4()}.jpg"
     await r2_service.upload_file(final_image_data, filename)
     
-    return filename
+    # Return filename and model used for credit calculation
+    model_used = resolved_model or "fal-ai/fast-sdxl"
+    return f"{filename}|{model_used}"
