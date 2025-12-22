@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from services.fal import FalService
-from services.r2 import R2Service
+from imagine.services.fal import FalService
+from imagine.services.r2 import R2Service
 
 @pytest.mark.asyncio
 async def test_fal_service_generate_image():

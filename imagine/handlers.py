@@ -8,10 +8,10 @@ from typing import Optional
 from aiogram.types import Message, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from services.fal import FalService
-from services.r2 import R2Service
-from services.convex import ConvexService
-from agent import agent
+from imagine.services.fal import FalService
+from imagine.services.r2 import R2Service
+from imagine.services.convex import ConvexService
+from imagine.agent import agent
 
 class GenState(StatesGroup):
     selecting_model = State()
@@ -451,7 +451,7 @@ async def run_generation_safe(message: Message, prompt: str, model_id: str | Non
         image_data = await fal_service.generate_image(clean_prompt, model=model_id)
         
         # Process image
-        img = Image.open(io.BytesIO(image_data))
+        img: Image.Image = Image.open(io.BytesIO(image_data))
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
         
@@ -727,7 +727,8 @@ async def process_clarification_callback(callback: CallbackQuery, state: FSMCont
     # Combine original prompt with user's clarification
     clarified_prompt = f"{original_prompt} (User chose: {user_choice})"
     
-    status_msg = await callback.message.edit_text("🤖 Agent is continuing...")
+    status_msg_result = await callback.message.edit_text("🤖 Agent is continuing...")
+    status_msg = status_msg_result if isinstance(status_msg_result, Message) else callback.message
     
     try:
         # Fetch conversation history

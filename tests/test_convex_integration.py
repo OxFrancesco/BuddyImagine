@@ -1,6 +1,6 @@
 import pytest
 import os
-from services.convex import ConvexService
+from imagine.services.convex import ConvexService
 from dotenv import load_dotenv
 
 load_dotenv(".env.local")

@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 # Load environment variables before importing other modules
 load_dotenv()
 
-from bot import get_bot, get_dispatcher
-from handlers import router
+from imagine.bot import get_bot, get_dispatcher
+from imagine.handlers import router
 
 from aiogram.types import BotCommand, BotCommandScopeDefault
 

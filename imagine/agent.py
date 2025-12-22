@@ -3,8 +3,8 @@ import uuid
 import io
 from PIL import Image
 from pydantic_ai import Agent, RunContext
-from services.fal import FalService
-from services.r2 import R2Service
+from imagine.services.fal import FalService
+from imagine.services.r2 import R2Service
 
 # Define the agent
 # Note: You need to set OPENROUTER_API_KEY environment variable.
@@ -104,7 +104,7 @@ async def generate_and_save_image(
         image_data = await fal_service.generate_image(prompt)
     
     # Compression Logic
-    img = Image.open(io.BytesIO(image_data))
+    img: Image.Image = Image.open(io.BytesIO(image_data))
     output_buffer = io.BytesIO()
 
     # Always convert to RGB to ensure compatibility with JPEG
