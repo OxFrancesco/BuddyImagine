@@ -183,7 +183,40 @@ export const getUserSettings = query({
             telegram_quality: user.telegram_quality ?? "uncompressed",
             notify_low_credits: user.notify_low_credits ?? true,
             low_credit_threshold: user.low_credit_threshold ?? 10,
+            last_generated_image: user.last_generated_image,
         };
+    },
+});
+
+export const setLastGeneratedImage = mutation({
+    args: { telegram_id: v.number(), filename: v.string() },
+    handler: async (ctx, args) => {
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_telegram_id", (q) => q.eq("telegram_id", args.telegram_id))
+            .first();
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        await ctx.db.patch(user._id, {
+            last_generated_image: args.filename,
+        });
+
+        return { success: true };
+    },
+});
+
+export const getLastGeneratedImage = query({
+    args: { telegram_id: v.number() },
+    handler: async (ctx, args) => {
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_telegram_id", (q) => q.eq("telegram_id", args.telegram_id))
+            .first();
+
+        return user?.last_generated_image ?? null;
     },
 });
 

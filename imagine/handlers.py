@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from imagine.services.fal import FalService
 from imagine.services.r2 import R2Service
 from imagine.services.convex import ConvexService
-from imagine.agent import agent
+from imagine.agent import get_agent
 from imagine.models import GenerationRequest, UserSettings
 from imagine.middleware.rate_limit import get_rate_limiter, RateLimitResult
 
@@ -48,14 +48,16 @@ async def cmd_start(message: Message):
     await message.answer(
         "Hello! I can generate images for you using FAL AI.\n\n"
         "**Commands:**\n"
-        "/generate &lt;prompt&gt; - Create an image\n"
+        "/imagine &lt;prompt&gt; - Text-to-image generation\n"
+        "/remix &lt;prompt&gt; - Remix your last image with a new prompt\n"
+        "/generate &lt;prompt&gt; - Create an image (legacy)\n"
         "/models [query] - List or search models\n"
         "/setmodel &lt;model_id&gt; - Set default model\n"
         "/credits - View balance & transactions\n"
         "/settings - View/update preferences\n"
         "/clear - Clear conversation history\n"
         "/help - Show this message\n\n"
-        "💡 Chat naturally and I'll remember our conversation!",
+        "💡 Or just describe what you want naturally!",
         parse_mode="HTML"
     )
 
@@ -489,6 +491,10 @@ async def run_generation_safe(message: Message, prompt: str, model_id: str | Non
         r2_filename = f"{uuid.uuid4()}.jpg"
         await r2_service.upload_file(compressed_data, r2_filename)
         
+        # Save last generated image for /remix
+        if convex_service:
+            convex_service.set_last_generated_image(user_id, r2_filename)
+        
         # If user has uncompressed R2 storage enabled, also save full quality
         if save_uncompressed_to_r2:
             uncompressed_buffer = io.BytesIO()
@@ -570,6 +576,315 @@ async def run_generation(message: Message, prompt: str, model_id: str | None = N
     await run_generation_safe(message, prompt, model_id, user_id)
 
 
+@router.message(Command("imagine"))
+async def cmd_imagine(message: Message, state: FSMContext):
+    """Text-to-image generation with /imagine command."""
+    if not message.text or not message.from_user:
+        return
+
+    prompt = message.text.replace("/imagine", "", 1).strip()
+    
+    if not prompt:
+        await message.answer(
+            "🎨 **Imagine Mode** - Create images from text\n\n"
+            "Usage: `/imagine <your prompt>`\n"
+            "Example: `/imagine a cyberpunk city at night with neon lights`\n\n"
+            "💡 Add `using <model>` to specify a model:\n"
+            "`/imagine a cat using flux`",
+            parse_mode="Markdown"
+        )
+        return
+
+    user_id = message.from_user.id
+    
+    # Check for "using <model>" pattern
+    target_model_query = None
+    if " using " in prompt.lower():
+        parts = prompt.lower().split(" using ")
+        potential_model = parts[-1].strip()
+        if len(potential_model) < 50:
+            target_model_query = potential_model
+            prompt = " using ".join(parts[:-1]).strip()
+
+    selected_model_id = None
+    if target_model_query:
+        matches = fal_service.search_models(target_model_query, model_type="text-to-image")
+        if matches:
+            if len(matches) == 1:
+                selected_model_id = matches[0]['id']
+            else:
+                keyboard = []
+                for model in matches[:5]:
+                    cost = fal_service.estimate_cost(model['id'])
+                    credits = (cost / 0.10) * 1.15
+                    keyboard.append([InlineKeyboardButton(
+                        text=f"{model['name']} (~{credits:.2f} cr)", 
+                        callback_data=f"gen_model:{model['id']}"
+                    )])
+                await state.update_data(generation_prompt=prompt)
+                await state.set_state(GenState.selecting_model)
+                await message.answer(
+                    f"🎨 Found multiple models for '{target_model_query}':",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+                )
+                return
+
+    await run_generation_safe(message, prompt, selected_model_id, user_id)
+
+
+@router.message(Command("remix"))
+async def cmd_remix(message: Message, state: FSMContext):
+    """Image-to-image generation using the last generated image."""
+    if not message.text or not message.from_user:
+        return
+
+    prompt = message.text.replace("/remix", "", 1).strip()
+    user_id = message.from_user.id
+    
+    if not convex_service:
+        await message.answer("❌ Service unavailable.")
+        return
+
+    # Get the last generated image
+    last_image = convex_service.get_last_generated_image(user_id)
+    if not last_image:
+        await message.answer(
+            "🔄 **Remix Mode** - Transform your last image\n\n"
+            "You haven't generated any images yet!\n"
+            "Use `/imagine <prompt>` first to create an image,\n"
+            "then use `/remix <prompt>` to transform it.",
+            parse_mode="Markdown"
+        )
+        return
+
+    if not prompt:
+        await message.answer(
+            "🔄 **Remix Mode** - Transform your last image\n\n"
+            f"Your last image: `{last_image}`\n\n"
+            "Usage: `/remix <your prompt>`\n"
+            "Example: `/remix make it look like a watercolor painting`\n\n"
+            "💡 Add `using <model>` to specify a model:\n"
+            "`/remix turn into anime style using flux redux`",
+            parse_mode="Markdown"
+        )
+        return
+
+    # Check for "using <model>" pattern
+    target_model_query = None
+    if " using " in prompt.lower():
+        parts = prompt.lower().split(" using ")
+        potential_model = parts[-1].strip()
+        if len(potential_model) < 50:
+            target_model_query = potential_model
+            prompt = " using ".join(parts[:-1]).strip()
+
+    # Default to image-to-image model
+    selected_model_id = "fal-ai/flux/dev/image-to-image"
+    if target_model_query:
+        matches = fal_service.search_models(target_model_query, model_type="image-to-image")
+        if matches:
+            if len(matches) == 1:
+                selected_model_id = matches[0]['id']
+            else:
+                keyboard = []
+                for model in matches[:5]:
+                    cost = fal_service.estimate_cost(model['id'])
+                    credits = (cost / 0.10) * 1.15
+                    keyboard.append([InlineKeyboardButton(
+                        text=f"{model['name']} (~{credits:.2f} cr)", 
+                        callback_data=f"remix_model:{model['id']}"
+                    )])
+                await state.update_data(remix_prompt=prompt, remix_image=last_image)
+                await state.set_state(GenState.selecting_model)
+                await message.answer(
+                    f"🔄 Found multiple models for '{target_model_query}':",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+                )
+                return
+
+    await run_remix_safe(message, prompt, last_image, selected_model_id, user_id)
+
+
+@router.callback_query(F.data.startswith("remix_model:"), GenState.selecting_model)
+async def process_remix_model_callback(callback: CallbackQuery, state: FSMContext):
+    """Handle model selection for remix."""
+    if not callback.data or not callback.message or not isinstance(callback.message, Message):
+        return
+
+    model_id = callback.data.split(":")[1]
+    data = await state.get_data()
+    prompt = data.get("remix_prompt")
+    image_filename = data.get("remix_image")
+    
+    if not isinstance(prompt, str) or not isinstance(image_filename, str):
+        await callback.answer("Session expired or invalid data.")
+        return
+
+    await state.clear()
+    await callback.message.delete()
+    await run_remix_safe(callback.message, prompt, image_filename, model_id, callback.from_user.id)
+
+
+async def run_remix_safe(
+    message: Message, 
+    prompt: str, 
+    source_image_filename: str, 
+    model_id: str, 
+    user_id: int
+):
+    """Run image-to-image generation safely with credit handling."""
+    # Rate limit check
+    rate_result = rate_limiter.check_generation_rate(user_id)
+    if not rate_result.allowed:
+        await message.answer(f"⏳ {rate_result.message}")
+        return
+
+    status_msg = await message.answer("🔄 Preparing remix...")
+    
+    # Get user settings
+    user_settings: dict = {}
+    if convex_service:
+        user_settings = convex_service.get_user_settings(user_id) or {}
+        user_credits = user_settings.get("credits", 0)
+        if user_credits <= 0:
+            await status_msg.edit_text("❌ You have 0 credits. Please contact admin to top up.")
+            return
+
+    deducted_credits = 0.0
+    r2_filename = ""
+
+    try:
+        # Get presigned URL for the source image
+        source_url = await r2_service.get_presigned_url(source_image_filename)
+        
+        # Estimate Cost with 15% markup
+        api_cost = fal_service.estimate_cost(model_id)
+        credits_needed = (api_cost / 0.10) * 1.15
+
+        # Check if user wants uncompressed R2 storage (+10%)
+        save_uncompressed_to_r2 = user_settings.get("save_uncompressed_to_r2", False)
+        if save_uncompressed_to_r2:
+            credits_needed *= 1.10
+
+        # Deduct Credits with logging
+        if convex_service:
+            description = f"Remix: {prompt[:50]}{'...' if len(prompt) > 50 else ''}"
+            deduct_result = convex_service.deduct_credits_with_log(
+                telegram_id=user_id,
+                amount=credits_needed,
+                log_type="generation",
+                description=description,
+                model_used=model_id,
+            )
+            if not deduct_result or not deduct_result.get("success"):
+                await status_msg.edit_text(
+                    f"❌ Insufficient credits. Needed: {credits_needed:.2f}, Available: {deduct_result.get('current_credits', 0):.2f}"
+                )
+                return
+            
+            deducted_credits = credits_needed
+            storage_note = " (+R2 full quality)" if save_uncompressed_to_r2 else ""
+            await status_msg.edit_text(
+                f"🔄 Remixing with {model_id}...\n💰 Cost: {credits_needed:.2f} credits{storage_note}"
+            )
+
+        # Generate image-to-image
+        image_data = await fal_service.generate_image_to_image(
+            image_url=source_url,
+            prompt=prompt,
+            model=model_id,
+            strength=0.85
+        )
+        
+        # Process image
+        img: Image.Image = Image.open(io.BytesIO(image_data))
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        
+        # Create compressed version for R2
+        compressed_buffer = io.BytesIO()
+        img.save(compressed_buffer, format="JPEG", quality=60, optimize=True)
+        compressed_data = compressed_buffer.getvalue()
+        
+        # Upload compressed to R2
+        r2_filename = f"{uuid.uuid4()}.jpg"
+        await r2_service.upload_file(compressed_data, r2_filename)
+        
+        # Save last generated image
+        if convex_service:
+            convex_service.set_last_generated_image(user_id, r2_filename)
+        
+        # If user has uncompressed R2 storage enabled, also save full quality
+        if save_uncompressed_to_r2:
+            uncompressed_buffer = io.BytesIO()
+            img.save(uncompressed_buffer, format="JPEG", quality=95)
+            uncompressed_data = uncompressed_buffer.getvalue()
+            full_filename = r2_filename.replace(".jpg", "_full.jpg")
+            await r2_service.upload_file(uncompressed_data, full_filename)
+        
+        # Determine what to send to Telegram
+        telegram_quality = user_settings.get("telegram_quality", "uncompressed")
+        if telegram_quality == "compressed":
+            telegram_image_data = compressed_data
+        else:
+            uncompressed_buffer = io.BytesIO()
+            img.save(uncompressed_buffer, format="JPEG", quality=95)
+            telegram_image_data = uncompressed_buffer.getvalue()
+
+        # Send to user
+        try:
+            await message.answer_photo(
+                BufferedInputFile(telegram_image_data, filename=r2_filename),
+                caption=f"🔄 Remixed from: {source_image_filename}\n✅ Saved as: {r2_filename}\n💰 Credits used: {deducted_credits:.2f}"
+            )
+            await status_msg.delete()
+            
+            rate_limiter.record_generation(user_id)
+            
+            if convex_service:
+                convex_service.save_message(user_id, "user", f"Remix: {prompt}")
+                convex_service.save_message(user_id, "assistant", f"Remixed image {r2_filename} using {model_id}")
+            
+            # Check for low credit warning
+            new_balance = convex_service.get_credits(user_id) if convex_service else 0
+            threshold = user_settings.get("low_credit_threshold", 10)
+            notify = user_settings.get("notify_low_credits", True)
+            if notify and new_balance <= threshold:
+                await message.answer(
+                    f"⚠️ Low credit warning! Balance: {new_balance:.2f} credits\n"
+                    f"Use /settings to adjust notification threshold."
+                )
+        except Exception as send_error:
+            await status_msg.edit_text(
+                f"✅ Remix finished: {r2_filename}\n⚠️ Failed to send image: {str(send_error)}"
+            )
+
+    except Exception as e:
+        # Refund if failed
+        if convex_service and deducted_credits > 0:
+            convex_service.add_credits_with_log(
+                telegram_id=user_id,
+                amount=deducted_credits,
+                log_type="refund",
+                description="Refund for failed remix"
+            )
+            await message.answer(f"⚠️ Remix failed. {deducted_credits:.2f} credits have been refunded.")
+
+        error_str = str(e)
+        logger.error(f"Remix error for user {user_id}: {error_str}")
+        
+        if "FAL API Error" in error_str:
+            user_error = "Image remix service temporarily unavailable. Please try again."
+        elif "timeout" in error_str.lower():
+            user_error = "Request timed out. Please try again."
+        elif "rate limit" in error_str.lower():
+            user_error = "Service rate limit reached. Please wait a moment and try again."
+        else:
+            user_error = "An error occurred during remix. Please try again."
+        
+        await status_msg.edit_text(f"❌ {user_error}")
+
+
 def build_message_history(messages: list) -> list:
     """Convert Convex messages to pydantic-ai ModelMessage format."""
     from pydantic_ai import ModelRequest, ModelResponse, UserPromptPart, TextPart
@@ -608,10 +923,34 @@ async def handle_natural_message(message: Message, state: FSMContext):
     
     # Check if this looks like an image generation request
     generation_keywords = ["generate", "create", "make", "draw", "imagine", "picture", "image", "photo"]
+    remix_keywords = ["remix", "transform", "vary", "variation", "change", "modify", "edit"]
     is_generation_request = any(kw in user_text for kw in generation_keywords)
+    is_remix_request = any(kw in user_text for kw in remix_keywords)
+    
+    # Handle natural remix requests (e.g., "remix my last image to look like anime")
+    if is_remix_request and convex_service:
+        last_image = convex_service.get_last_generated_image(user_id)
+        if last_image:
+            prompt = original_text
+            for kw in remix_keywords:
+                prompt = re.sub(rf'\b{kw}\b', '', prompt, flags=re.IGNORECASE)
+            prompt = re.sub(r'\s+', ' ', prompt).strip()
+            prompt = re.sub(r'^(my |the |last |image |it |to |into )+', '', prompt, flags=re.IGNORECASE).strip()
+            if not prompt:
+                prompt = "a creative variation"
+            
+            await run_remix_safe(message, prompt, last_image, "fal-ai/flux/dev/image-to-image", user_id)
+            return
+        else:
+            await message.answer(
+                "🔄 I'd love to remix an image for you, but you haven't generated one yet!\n"
+                "Use `/imagine <prompt>` first, then I can help you remix it.",
+                parse_mode="Markdown"
+            )
+            return
     
     # Known model keywords to detect
-    model_keywords = ["flux", "nano banana", "banana", "recraft", "ideogram", "sdxl", "fooocus", "aura", "hunyuan", "kling", "luma", "minimax"]
+    model_keywords = ["flux", "nano banana", "banana", "recraft", "ideogram", "sdxl", "fooocus", "aura", "hunyuan", "kling", "luma", "minimax", "redux"]
     detected_model_hint = None
     for kw in model_keywords:
         if kw in user_text:
@@ -675,7 +1014,7 @@ async def handle_natural_message(message: Message, state: FSMContext):
         
         # Run agent with history
         deps = {'fal_service': fal_service, 'r2_service': r2_service}
-        result = await agent.run(original_text, deps=deps, message_history=message_history)
+        result = await get_agent().run(original_text, deps=deps, message_history=message_history)
         agent_response = str(result.output)
         
         # Handle clarification requests from the agent
@@ -789,7 +1128,7 @@ async def process_clarification_callback(callback: CallbackQuery, state: FSMCont
             message_history = build_message_history(stored_messages)
         
         deps = {'fal_service': fal_service, 'r2_service': r2_service}
-        result = await agent.run(clarified_prompt, deps=deps, message_history=message_history)
+        result = await get_agent().run(clarified_prompt, deps=deps, message_history=message_history)
         agent_response = str(result.output)
         
         # Save to Convex

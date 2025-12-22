@@ -16,6 +16,7 @@ class UserSettingsDict(TypedDict, total=False):
     telegram_quality: str
     notify_low_credits: bool
     low_credit_threshold: float
+    last_generated_image: str | None
 
 
 class CreditResultDict(TypedDict, total=False):
@@ -202,3 +203,16 @@ class ConvexService:
         """Get credit summary statistics."""
         result = self.client.query("creditLogs:getCreditSummary", {"telegram_id": telegram_id})
         return dict(result) if result else None  # type: ignore
+
+    def set_last_generated_image(self, telegram_id: int, filename: str) -> dict[str, bool]:
+        """Set the last generated image filename for a user."""
+        result = self.client.mutation("users:setLastGeneratedImage", {
+            "telegram_id": telegram_id,
+            "filename": filename,
+        })
+        return dict(result) if result else {"success": False}  # type: ignore
+
+    def get_last_generated_image(self, telegram_id: int) -> str | None:
+        """Get the last generated image filename for a user."""
+        result = self.client.query("users:getLastGeneratedImage", {"telegram_id": telegram_id})
+        return str(result) if result else None

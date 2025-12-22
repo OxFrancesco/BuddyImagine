@@ -72,3 +72,31 @@ class R2Service:
             except ClientError as e:
                 logger.error(f"Failed to download {filename} from R2: {e}")
                 raise
+
+    async def get_presigned_url(self, filename: str, expires_in: int = 3600) -> str:
+        """
+        Generates a presigned URL for accessing a file in R2.
+        
+        Args:
+            filename: The name of the file.
+            expires_in: URL expiration time in seconds (default: 1 hour).
+            
+        Returns:
+            A presigned URL that can be used to access the file.
+        """
+        async with self.session.client("s3",
+            endpoint_url=self.endpoint_url,
+            aws_access_key_id=self.access_key,
+            aws_secret_access_key=self.secret_key,
+            region_name="auto"
+        ) as s3:
+            try:
+                url = await s3.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': self.bucket_name, 'Key': filename},
+                    ExpiresIn=expires_in
+                )
+                return str(url)
+            except ClientError as e:
+                logger.error(f"Failed to generate presigned URL for {filename}: {e}")
+                raise

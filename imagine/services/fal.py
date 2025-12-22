@@ -85,22 +85,38 @@ class RetryConfig:
     exponential_base: float = 2.0  # Exponential backoff base
 
 class FalService:
-    KNOWN_MODELS = [
-        {"id": "fal-ai/fast-sdxl", "name": "Fast SDXL", "description": "Fast Stable Diffusion XL"},
-        {"id": "fal-ai/flux/dev", "name": "Flux Dev", "description": "Flux.1 Dev - High quality"},
-        {"id": "fal-ai/flux/schnell", "name": "Flux Schnell", "description": "Flux.1 Schnell - Fast"},
-        {"id": "fal-ai/flux-realism", "name": "Flux Realism", "description": "Flux Realism LoRA"},
-        {"id": "fal-ai/recraft/v3", "name": "Recraft V3", "description": "Recraft V3 - Design focused"},
-        {"id": "fal-ai/fooocus", "name": "Fooocus", "description": "Fooocus - Easy to use SDXL"},
-        {"id": "fal-ai/stable-diffusion-v3-medium", "name": "SD3 Medium", "description": "Stable Diffusion 3 Medium"},
-        {"id": "fal-ai/auraflow", "name": "AuraFlow", "description": "AuraFlow"},
-        {"id": "fal-ai/ideogram/v2", "name": "Ideogram V2", "description": "Ideogram V2 - Typography"},
-        {"id": "fal-ai/nano-banana-pro", "name": "Nano Banana", "description": "Nano Banana - Creative & Stylized"},
-        {"id": "fal-ai/hunyuan-video-v1.5/text-to-video", "name": "Hunyuan Video", "description": "Hunyuan Text to Video"},
-        {"id": "fal-ai/kling/video", "name": "Kling Video", "description": "Kling Video Generation"},
-        {"id": "fal-ai/minimax/video-01/image-to-video", "name": "Minimax Video", "description": "Minimax Image to Video"},
-        {"id": "fal-ai/luma-dream-machine", "name": "Luma Dream Machine", "description": "Luma Dream Machine Video"},
+    # Text-to-Image models
+    TEXT_TO_IMAGE_MODELS = [
+        {"id": "fal-ai/fast-sdxl", "name": "Fast SDXL", "description": "Fast Stable Diffusion XL", "type": "text-to-image"},
+        {"id": "fal-ai/flux/dev", "name": "Flux Dev", "description": "Flux.1 Dev - High quality", "type": "text-to-image"},
+        {"id": "fal-ai/flux/schnell", "name": "Flux Schnell", "description": "Flux.1 Schnell - Fast", "type": "text-to-image"},
+        {"id": "fal-ai/flux-realism", "name": "Flux Realism", "description": "Flux Realism LoRA", "type": "text-to-image"},
+        {"id": "fal-ai/recraft/v3", "name": "Recraft V3", "description": "Recraft V3 - Design focused", "type": "text-to-image"},
+        {"id": "fal-ai/fooocus", "name": "Fooocus", "description": "Fooocus - Easy to use SDXL", "type": "text-to-image"},
+        {"id": "fal-ai/stable-diffusion-v3-medium", "name": "SD3 Medium", "description": "Stable Diffusion 3 Medium", "type": "text-to-image"},
+        {"id": "fal-ai/auraflow", "name": "AuraFlow", "description": "AuraFlow", "type": "text-to-image"},
+        {"id": "fal-ai/ideogram/v2", "name": "Ideogram V2", "description": "Ideogram V2 - Typography", "type": "text-to-image"},
+        {"id": "fal-ai/nano-banana-pro", "name": "Nano Banana", "description": "Nano Banana - Creative & Stylized", "type": "text-to-image"},
     ]
+    
+    # Image-to-Image models (for /remix)
+    IMAGE_TO_IMAGE_MODELS = [
+        {"id": "fal-ai/flux/dev/image-to-image", "name": "Flux Dev Img2Img", "description": "Flux.1 Dev Image-to-Image - Best quality", "type": "image-to-image"},
+        {"id": "fal-ai/flux/schnell/redux", "name": "Flux Schnell Redux", "description": "Flux.1 Schnell Redux - Fast variations", "type": "image-to-image"},
+        {"id": "fal-ai/flux/dev/redux", "name": "Flux Dev Redux", "description": "Flux.1 Dev Redux - High quality variations", "type": "image-to-image"},
+        {"id": "fal-ai/flux-pro/v1/redux", "name": "Flux Pro Redux", "description": "Flux Pro Redux - Premium variations", "type": "image-to-image"},
+    ]
+    
+    # Video models
+    VIDEO_MODELS = [
+        {"id": "fal-ai/hunyuan-video-v1.5/text-to-video", "name": "Hunyuan Video", "description": "Hunyuan Text to Video", "type": "video"},
+        {"id": "fal-ai/kling/video", "name": "Kling Video", "description": "Kling Video Generation", "type": "video"},
+        {"id": "fal-ai/minimax/video-01/image-to-video", "name": "Minimax Video", "description": "Minimax Image to Video", "type": "video"},
+        {"id": "fal-ai/luma-dream-machine", "name": "Luma Dream Machine", "description": "Luma Dream Machine Video", "type": "video"},
+    ]
+    
+    # Combined list for backward compatibility
+    KNOWN_MODELS = TEXT_TO_IMAGE_MODELS + IMAGE_TO_IMAGE_MODELS + VIDEO_MODELS
 
     # Pricing table (approximate cost per megapixel or per generation)
     # Based on research:
@@ -108,7 +124,8 @@ class FalService:
     # Fast SDXL: ~$0.001 - $0.005 (often very cheap)
     # Video models: significantly more expensive
     PRICING_TABLE = {
-        "fal-ai/fast-sdxl": 0.005, # Estimate
+        # Text-to-Image models
+        "fal-ai/fast-sdxl": 0.005,
         "fal-ai/flux/dev": 0.03,
         "fal-ai/flux/schnell": 0.01,
         "fal-ai/flux-realism": 0.03,
@@ -118,6 +135,11 @@ class FalService:
         "fal-ai/auraflow": 0.02,
         "fal-ai/ideogram/v2": 0.05,
         "fal-ai/nano-banana-pro": 0.02,
+        # Image-to-Image models
+        "fal-ai/flux/dev/image-to-image": 0.04,
+        "fal-ai/flux/schnell/redux": 0.015,
+        "fal-ai/flux/dev/redux": 0.035,
+        "fal-ai/flux-pro/v1/redux": 0.06,
         # Video models (higher cost)
         "fal-ai/hunyuan-video-v1.5/text-to-video": 0.50,
         "fal-ai/kling/video": 0.50,
@@ -152,25 +174,41 @@ class FalService:
         """
         return self.PRICING_TABLE.get(model, self.DEFAULT_COST)
 
-    def search_models(self, query: str, limit: int = 5) -> list[dict[str, str]]:
+    def search_models(
+        self, 
+        query: str, 
+        limit: int = 5, 
+        model_type: str | None = None
+    ) -> list[dict[str, str]]:
         """
         Fuzzy searches for models based on the query using rapidfuzz.
         
         Args:
             query: The search query.
             limit: Maximum number of results to return.
+            model_type: Filter by model type: "text-to-image", "image-to-image", "video", or None for all.
             
         Returns:
             A list of matching model dictionaries, sorted by relevance.
         """
+        # Select model list based on type filter
+        if model_type == "text-to-image":
+            model_list = self.TEXT_TO_IMAGE_MODELS
+        elif model_type == "image-to-image":
+            model_list = self.IMAGE_TO_IMAGE_MODELS
+        elif model_type == "video":
+            model_list = self.VIDEO_MODELS
+        else:
+            model_list = self.KNOWN_MODELS
+        
         if not query:
-            return self.KNOWN_MODELS[:limit]
+            return model_list[:limit]
 
         # Prepare choices for fuzzy matching. 
         # We match against a combined string of name + description + id to cover all bases.
         choices = {
             i: f"{model['name']} {model['description']} {model['id']}" 
-            for i, model in enumerate(self.KNOWN_MODELS)
+            for i, model in enumerate(model_list)
         }
         
         # Extract top matches
@@ -188,7 +226,7 @@ class FalService:
             # match structure in rapidfuzz 3.x: (match_string, score, key)
             # Since we passed a dict, key is the index 'i'
             index = match[2]
-            matched_models.append(self.KNOWN_MODELS[index])
+            matched_models.append(model_list[index])
             
         return matched_models
 
@@ -215,7 +253,7 @@ class FalService:
             "Authorization": f"Key {self.fal_key}",
             "Content-Type": "application/json"
         }
-        payload: dict[str, str | bool] = {
+        payload: dict[str, str | bool | float | int] = {
             "prompt": prompt,
             "sync_mode": True
         }
@@ -254,7 +292,7 @@ class FalService:
         raise last_exception or Exception("Generation failed")
 
     async def _execute_generation(
-        self, url: str, headers: dict[str, str], payload: dict[str, str | bool]
+        self, url: str, headers: dict[str, str], payload: dict[str, str | bool | float | int]
     ) -> bytes:
         """Execute a single generation request."""
         logger.info(f"Sending request to FAL: {url}")
@@ -300,3 +338,83 @@ class FalService:
                             raise Exception(f"Failed to download generated image")
                 else:
                     raise Exception("No image in response")
+
+    async def generate_image_to_image(
+        self, 
+        image_url: str, 
+        prompt: str = "",
+        model: str = "fal-ai/flux/dev/image-to-image",
+        strength: float = 0.85
+    ) -> bytes:
+        """
+        Generates an image variation using FAL AI image-to-image models.
+        
+        Args:
+            image_url: URL of the source image (must be publicly accessible).
+            prompt: Optional prompt to guide the generation.
+            model: The FAL AI model to use. Defaults to "fal-ai/flux/dev/image-to-image".
+            strength: How much to transform the image (0.0 = identical, 1.0 = completely new).
+            
+        Returns:
+            The generated image binary data.
+            
+        Raises:
+            Exception: If generation fails after all retries or circuit is open.
+        """
+        if not self.circuit_breaker.can_execute():
+            raise Exception("Service temporarily unavailable. Please try again later.")
+        
+        url = f"{self.base_url}/{model}"
+        headers = {
+            "Authorization": f"Key {self.fal_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Build payload based on model type
+        payload: dict[str, str | bool | float | int] = {
+            "image_url": image_url,
+            "sync_mode": True,
+        }
+        
+        # For redux models (variations without prompt)
+        if "redux" in model:
+            # Redux models create variations based on the image
+            if prompt:
+                payload["prompt"] = prompt
+        else:
+            # For image-to-image models, prompt is required
+            payload["prompt"] = prompt or "A high-quality variation of this image"
+            payload["strength"] = strength
+            payload["num_inference_steps"] = 40
+            payload["guidance_scale"] = 3.5
+
+        last_exception: Exception | None = None
+        
+        for attempt in range(self.retry_config.max_retries + 1):
+            try:
+                result = await self._execute_generation(url, headers, payload)
+                self.circuit_breaker.record_success()
+                return result
+            except Exception as e:
+                last_exception = e
+                self.circuit_breaker.record_failure()
+                
+                error_str = str(e).lower()
+                if "unauthorized" in error_str or "forbidden" in error_str:
+                    logger.error(f"Authentication error, not retrying: {e}")
+                    raise
+                if "invalid" in error_str:
+                    logger.error(f"Invalid request, not retrying: {e}")
+                    raise
+                
+                if attempt < self.retry_config.max_retries:
+                    delay = min(
+                        self.retry_config.base_delay * (self.retry_config.exponential_base ** attempt),
+                        self.retry_config.max_delay
+                    )
+                    logger.warning(f"Img2Img attempt {attempt + 1} failed, retrying in {delay:.1f}s: {e}")
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(f"All {self.retry_config.max_retries + 1} img2img attempts failed")
+        
+        raise last_exception or Exception("Image-to-image generation failed")

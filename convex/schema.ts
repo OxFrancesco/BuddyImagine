@@ -15,6 +15,8 @@ export default defineSchema({
         telegram_quality: v.optional(v.string()), // "compressed" | "uncompressed" (default: uncompressed)
         notify_low_credits: v.optional(v.boolean()),
         low_credit_threshold: v.optional(v.float64()), // default: 10
+        // Last generated image for image-to-image
+        last_generated_image: v.optional(v.string()), // R2 filename of last generated image
     }).index("by_telegram_id", ["telegram_id"]),
 
     messages: defineTable({
