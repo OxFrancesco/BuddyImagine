@@ -28,7 +28,7 @@ app = FastAPI(
 )
 
 # Add trusted host middleware (configure ALLOWED_HOSTS env var)
-allowed_hosts = os.getenv("ALLOWED_HOSTS", "*.vercel.app,localhost").split(",")
+allowed_hosts = os.getenv("ALLOWED_HOSTS", "*.vercel.app,*.buddytools.org,localhost").split(",")
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 
