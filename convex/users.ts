@@ -25,12 +25,14 @@ export const upsertUser = mutation({
             });
             return existing._id;
         } else {
+            // New users get limited initial credits (10) to prevent abuse
+            // Admins can add more credits via addCreditsWithLog
             return await ctx.db.insert("users", {
                 telegram_id: args.telegram_id,
                 username: args.username,
                 first_name: args.first_name,
                 last_name: args.last_name,
-                credits: 100.0, // Default credits
+                credits: 10.0, // Reduced from 100 to prevent multi-account abuse
                 default_model: args.default_model,
                 created_at: Date.now(),
             });

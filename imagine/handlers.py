@@ -1,6 +1,7 @@
 import uuid
 import io
 import re
+import logging
 from PIL import Image
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
@@ -8,10 +9,15 @@ from typing import Optional
 from aiogram.types import Message, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from pydantic import ValidationError
 from imagine.services.fal import FalService
 from imagine.services.r2 import R2Service
 from imagine.services.convex import ConvexService
 from imagine.agent import agent
+from imagine.models import GenerationRequest, UserSettings
+from imagine.middleware.rate_limit import get_rate_limiter, RateLimitResult
+
+logger = logging.getLogger(__name__)
 
 class GenState(StatesGroup):
     selecting_model = State()
@@ -22,10 +28,12 @@ router = Router()
 fal_service = FalService()
 r2_service = R2Service()
 convex_service: Optional[ConvexService] = None
+rate_limiter = get_rate_limiter()
+
 try:
     convex_service = ConvexService()
 except ValueError:
-    print("WARNING: ConvexService not initialized. CONVEX_URL not set.")
+    logger.warning("ConvexService not initialized. CONVEX_URL not set.")
 
 @router.message(CommandStart())
 async def cmd_start(message: Message):
@@ -383,6 +391,23 @@ async def process_gen_model_callback(callback: CallbackQuery, state: FSMContext)
     await run_generation_safe(callback.message, prompt, model_id, callback.from_user.id)
 
 async def run_generation_safe(message: Message, prompt: str, model_id: str | None, user_id: int):
+    # Rate limit check
+    rate_result = rate_limiter.check_generation_rate(user_id)
+    if not rate_result.allowed:
+        await message.answer(f"⏳ {rate_result.message}")
+        return
+    
+    # Validate and sanitize prompt
+    try:
+        validated = GenerationRequest(prompt=prompt, model_id=model_id)
+        prompt = validated.prompt
+        model_id = validated.model_id
+    except ValidationError as e:
+        errors = e.errors()
+        error_msg = errors[0].get("msg", "Invalid input") if errors else "Invalid input"
+        await message.answer(f"❌ Invalid request: {error_msg}")
+        return
+    
     status_msg = await message.answer("🤖 Agent is thinking and working...")
     
     # Get user settings
@@ -400,19 +425,19 @@ async def run_generation_safe(message: Message, prompt: str, model_id: str | Non
 
     try:
         # Determine Model ID if not set
+        resolved_model: str = model_id or user_settings.get("default_model") or "fal-ai/fast-sdxl"
+        
         if not model_id:
-            model_id = user_settings.get("default_model", "fal-ai/fast-sdxl")
-
             # Simple keyword overrides (legacy support if user didn't use "using")
             if "flux" in prompt.lower():
-                model_id = "fal-ai/flux/dev"
+                resolved_model = "fal-ai/flux/dev"
             elif "video" in prompt.lower():
-                model_id = "fal-ai/hunyuan-video-v1.5/text-to-video"
+                resolved_model = "fal-ai/hunyuan-video-v1.5/text-to-video"
             elif "fast" in prompt.lower() and "flux" not in prompt.lower():
-                model_id = "fal-ai/fast-sdxl"
+                resolved_model = "fal-ai/fast-sdxl"
         
         # Estimate Cost with 15% markup
-        api_cost = fal_service.estimate_cost(model_id)
+        api_cost = fal_service.estimate_cost(resolved_model)
         credits_needed = (api_cost / 0.10) * 1.15  # 15% markup
         
         # Check if user wants uncompressed R2 storage (+10%)
@@ -423,23 +448,23 @@ async def run_generation_safe(message: Message, prompt: str, model_id: str | Non
         # Deduct Credits with logging
         if convex_service:
             description = f"Generation: {prompt[:50]}{'...' if len(prompt) > 50 else ''}"
-            result = convex_service.deduct_credits_with_log(
+            deduct_result = convex_service.deduct_credits_with_log(
                 telegram_id=user_id,
                 amount=credits_needed,
                 log_type="generation",
                 description=description,
-                model_used=model_id,
+                model_used=resolved_model,
             )
-            if not result or not result.get("success"):
+            if not deduct_result or not deduct_result.get("success"):
                 await status_msg.edit_text(
-                    f"❌ Insufficient credits. Needed: {credits_needed:.2f}, Available: {result.get('current_credits', 0):.2f}"
+                    f"❌ Insufficient credits. Needed: {credits_needed:.2f}, Available: {deduct_result.get('current_credits', 0):.2f}"
                 )
                 return
             
             deducted_credits = credits_needed
             storage_note = " (+R2 full quality)" if save_uncompressed_to_r2 else ""
             await status_msg.edit_text(
-                f"🎨 Generating with {model_id}...\n💰 Cost: {credits_needed:.2f} credits{storage_note}"
+                f"🎨 Generating with {resolved_model}...\n💰 Cost: {credits_needed:.2f} credits{storage_note}"
             )
 
         # Clean prompt (remove model/quality keywords for better generation)
@@ -448,7 +473,7 @@ async def run_generation_safe(message: Message, prompt: str, model_id: str | Non
             clean_prompt = clean_prompt.lower().replace(keyword, "").strip()
 
         # Direct generation (no agent)
-        image_data = await fal_service.generate_image(clean_prompt, model=model_id)
+        image_data = await fal_service.generate_image(clean_prompt, model=resolved_model)
         
         # Process image
         img: Image.Image = Image.open(io.BytesIO(image_data))
@@ -490,10 +515,13 @@ async def run_generation_safe(message: Message, prompt: str, model_id: str | Non
             )
             await status_msg.delete()
             
+            # Record successful generation for rate limiting
+            rate_limiter.record_generation(user_id)
+            
             # Save to conversation history
             if convex_service:
                 convex_service.save_message(user_id, "user", f"Generate: {prompt}")
-                convex_service.save_message(user_id, "assistant", f"Generated image {r2_filename} using {model_id}")
+                convex_service.save_message(user_id, "assistant", f"Generated image {r2_filename} using {resolved_model}")
             
             # Check for low credit warning
             new_balance = convex_service.get_credits(user_id) if convex_service else 0
@@ -516,15 +544,25 @@ async def run_generation_safe(message: Message, prompt: str, model_id: str | Non
                 telegram_id=user_id,
                 amount=deducted_credits,
                 log_type="refund",
-                description=f"Refund for failed generation: {str(e)[:50]}"
+                description=f"Refund for failed generation"
             )
             await message.answer(f"⚠️ Generation failed. {deducted_credits:.2f} credits have been refunded.")
 
-        error_msg = str(e)
-        if len(error_msg) > 1000:
-            error_msg = error_msg[:1000] + "... (truncated)"
-        await status_msg.edit_text(f"❌ Error: {error_msg}")
-        print(f"FULL ERROR: {e}")
+        # Sanitize error message - don't expose internal details
+        error_str = str(e)
+        logger.error(f"Generation error for user {user_id}: {error_str}")
+        
+        # Provide user-friendly error messages
+        if "FAL API Error" in error_str:
+            user_error = "Image generation service temporarily unavailable. Please try again."
+        elif "timeout" in error_str.lower():
+            user_error = "Request timed out. Please try again with a simpler prompt."
+        elif "rate limit" in error_str.lower():
+            user_error = "Service rate limit reached. Please wait a moment and try again."
+        else:
+            user_error = "An error occurred during generation. Please try again."
+        
+        await status_msg.edit_text(f"❌ {user_error}")
 
 # Wrapper to adapt signatures
 async def run_generation(message: Message, prompt: str, model_id: str | None = None):
@@ -552,6 +590,19 @@ async def handle_natural_message(message: Message, state: FSMContext):
         return
     
     user_id = message.from_user.id
+    
+    # Rate limit check for messages
+    rate_result = rate_limiter.check_message_rate(user_id)
+    if not rate_result.allowed:
+        await message.answer(f"⏳ {rate_result.message}")
+        return
+    rate_limiter.record_message(user_id)
+    
+    # Validate input length
+    if len(message.text) > 2000:
+        await message.answer("❌ Message too long. Please keep it under 2000 characters.")
+        return
+    
     user_text = message.text.lower()
     original_text = message.text
     
