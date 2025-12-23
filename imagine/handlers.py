@@ -1086,7 +1086,9 @@ async def handle_natural_message(message: Message, state: FSMContext):
                 if deduct_result and deduct_result.get("success"):
                     credits_deducted = credits_needed
             
-            caption = f"✅ Generated: {filename}"
+            # Format model name for display (remove fal-ai/ prefix)
+            model_display = model_used.replace("fal-ai/", "")
+            caption = f"✅ Generated with {model_display}"
             if credits_deducted > 0:
                 caption += f"\n💰 Cost: {credits_deducted:.2f} credits"
             await message.answer_photo(
@@ -1129,7 +1131,9 @@ async def handle_natural_message(message: Message, state: FSMContext):
             
             try:
                 image_data = await r2_service.download_file(filename)
-                caption = f"✅ Generated: {filename}"
+                # Format model name for display (remove fal-ai/ prefix)
+                model_display = model_used.replace("fal-ai/", "")
+                caption = f"✅ Generated with {model_display}"
                 if credits_deducted > 0:
                     caption += f"\n💰 Cost: {credits_deducted:.2f} credits"
                 await message.answer_photo(
@@ -1139,7 +1143,8 @@ async def handle_natural_message(message: Message, state: FSMContext):
                 await status_msg.delete()
             except Exception as download_err:
                 logger.error(f"Failed to download/send image {filename}: {download_err}")
-                await status_msg.edit_text(f"✅ Generated: {filename}\n⚠️ Could not send image: {str(download_err)[:100]}")
+                model_display = model_used.replace("fal-ai/", "")
+                await status_msg.edit_text(f"✅ Generated with {model_display}\n⚠️ Could not send image: {str(download_err)[:100]}")
             
     except Exception as e:
         error_msg = str(e)
