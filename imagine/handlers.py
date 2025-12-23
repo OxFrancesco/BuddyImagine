@@ -1061,11 +1061,46 @@ async def handle_natural_message(message: Message, state: FSMContext):
             await status_msg.edit_text(f"🤖 Agent response: {agent_response}")
             return
         
-        # Extract filename from response (agent may include extra text)
-        # Response format: "filename.jpg|model-id" or just contains the filename
-        filename_match = re.search(r'([a-f0-9\-]{36}\.(?:jpg|jpeg|png))', agent_response)
+        # Check if image was generated and stored in deps (direct access, no re-download needed)
+        generated_image_data = deps.get('_generated_image_data')
+        generated_filename = deps.get('_generated_filename')
+        generated_model = deps.get('_generated_model')
         
-        if filename_match:
+        if generated_image_data and generated_filename:
+            # Use the image data directly from the generation
+            filename = str(generated_filename)
+            model_used = str(generated_model) if generated_model else "fal-ai/fast-sdxl"
+            
+            # Deduct credits
+            credits_deducted = 0.0
+            if convex_service:
+                api_cost = fal_service.estimate_cost(model_used)
+                credits_needed = (api_cost / 0.10) * 1.15  # 15% markup
+                deduct_result = convex_service.deduct_credits_with_log(
+                    telegram_id=user_id,
+                    amount=credits_needed,
+                    log_type="generation",
+                    description=f"Generation: {user_text[:50]}{'...' if len(user_text) > 50 else ''}",
+                    model_used=model_used,
+                )
+                if deduct_result and deduct_result.get("success"):
+                    credits_deducted = credits_needed
+            
+            caption = f"✅ Generated: {filename}"
+            if credits_deducted > 0:
+                caption += f"\n💰 Cost: {credits_deducted:.2f} credits"
+            await message.answer_photo(
+                BufferedInputFile(generated_image_data, filename=filename),
+                caption=caption
+            )
+            await status_msg.delete()
+        
+        # Fallback: Extract filename from response and download from R2
+        else:
+            filename_match = re.search(r'([a-f0-9\-]{36}\.(?:jpg|jpeg|png))', agent_response)
+            if not filename_match:
+                await status_msg.edit_text(f"🤖 {agent_response}")
+                return
             filename = filename_match.group(1)
             
             # Extract model from response for credit calculation
@@ -1105,8 +1140,6 @@ async def handle_natural_message(message: Message, state: FSMContext):
             except Exception as download_err:
                 logger.error(f"Failed to download/send image {filename}: {download_err}")
                 await status_msg.edit_text(f"✅ Generated: {filename}\n⚠️ Could not send image: {str(download_err)[:100]}")
-        else:
-            await status_msg.edit_text(f"🤖 {agent_response}")
             
     except Exception as e:
         error_msg = str(e)

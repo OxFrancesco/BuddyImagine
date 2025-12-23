@@ -4,6 +4,7 @@ import os
 import uuid
 import io
 import logging
+import base64
 from typing import Any
 from PIL import Image
 from pydantic_ai import RunContext
@@ -108,7 +109,7 @@ async def generate_and_save_image(
         uncompressed: If True, saves the image with higher quality (costs more). Default is False (compressed).
         
     Returns:
-        The filename and model used, separated by |
+        JSON string with filename, model_used, and base64 image data
     """
     logger.info(f"generate_and_save_image called with prompt='{prompt}', model={model}, model_hint={model_hint}")
     fal_service: FalService = ctx.deps['fal_service']
@@ -144,12 +145,18 @@ async def generate_and_save_image(
 
     final_image_data = output_buffer.getvalue()
 
-    # Upload
+    # Upload to R2
     filename = f"{uuid.uuid4()}.jpg"
     await r2_service.upload_file(final_image_data, filename)
     
-    # Return filename and model used for credit calculation
+    # Store image data in context for direct access (avoid re-download)
+    ctx.deps['_generated_image_data'] = final_image_data
+    ctx.deps['_generated_filename'] = filename
+    
     model_used = resolved_model or "fal-ai/fast-sdxl"
+    ctx.deps['_generated_model'] = model_used
+    
+    logger.info(f"Image generated and saved: {filename}, model: {model_used}, size: {len(final_image_data)} bytes")
     return f"{filename}|{model_used}"
 
 
@@ -170,7 +177,7 @@ def get_agent() -> Any:
             raise
         
         _agent = Agent(
-            'openrouter:openai/gpt-4o-mini',
+            'openrouter:google/gemini-3-flash-preview',
             deps_type=dict,
             system_prompt=(
                 "You are an image generation assistant. You MUST use the provided tools to generate images.\n\n"
