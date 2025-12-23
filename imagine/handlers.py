@@ -4,8 +4,15 @@ import uuid
 import io
 import re
 import logging
-import sentry_sdk
 from PIL import Image
+
+# Optional Sentry integration
+try:
+    import sentry_sdk
+    SENTRY_AVAILABLE = True
+except ImportError:
+    sentry_sdk = None  # type: ignore
+    SENTRY_AVAILABLE = False
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from typing import Optional
@@ -555,7 +562,8 @@ async def run_generation_safe(message: Message, prompt: str, model_id: str | Non
         # Sanitize error message - don't expose internal details
         error_str = str(e)
         logger.error(f"Generation error for user {user_id}: {error_str}")
-        sentry_sdk.capture_exception(e)
+        if SENTRY_AVAILABLE:
+            sentry_sdk.capture_exception(e)
         
         # Provide user-friendly error messages
         if "FAL API Error" in error_str:
@@ -871,7 +879,8 @@ async def run_remix_safe(
 
         error_str = str(e)
         logger.error(f"Remix error for user {user_id}: {error_str}")
-        sentry_sdk.capture_exception(e)
+        if SENTRY_AVAILABLE:
+            sentry_sdk.capture_exception(e)
         
         if "FAL API Error" in error_str:
             user_error = "Image remix service temporarily unavailable. Please try again."
@@ -1099,7 +1108,8 @@ async def handle_natural_message(message: Message, state: FSMContext):
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Natural message error: {error_msg}")
-        sentry_sdk.capture_exception(e)
+        if SENTRY_AVAILABLE:
+            sentry_sdk.capture_exception(e)
         if len(error_msg) > 500:
             error_msg = error_msg[:500] + "..."
         await status_msg.edit_text(f"❌ Error: {error_msg}\n\n💡 Tip: Use /generate &lt;prompt&gt; for direct generation.")
@@ -1186,5 +1196,6 @@ async def process_clarification_callback(callback: CallbackQuery, state: FSMCont
     except Exception as e:
         error_msg = str(e)[:500]
         logger.error(f"Clarification callback error: {error_msg}")
-        sentry_sdk.capture_exception(e)
+        if SENTRY_AVAILABLE:
+            sentry_sdk.capture_exception(e)
         await status_msg.edit_text(f"❌ Error: {error_msg}")
