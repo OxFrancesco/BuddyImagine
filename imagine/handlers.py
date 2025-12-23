@@ -520,9 +520,10 @@ async def run_generation_safe(message: Message, prompt: str, model_id: str | Non
 
         # Send to user
         try:
+            model_display = resolved_model.replace("fal-ai/", "")
             await message.answer_photo(
                 BufferedInputFile(telegram_image_data, filename=r2_filename),
-                caption=f"✅ Generated and saved as: {r2_filename}\n💰 Credits used: {deducted_credits:.2f}"
+                caption=f"✅ Generated with {model_display}\n💰 Credits used: {deducted_credits:.2f}"
             )
             await status_msg.delete()
             
@@ -1221,7 +1222,8 @@ async def process_clarification_callback(callback: CallbackQuery, state: FSMCont
             
             try:
                 image_data = await r2_service.download_file(filename)
-                caption = f"✅ Generated: {filename}"
+                model_display = model_used.replace("fal-ai/", "")
+                caption = f"✅ Generated with {model_display}"
                 if credits_deducted > 0:
                     caption += f"\n💰 Cost: {credits_deducted:.2f} credits"
                 await callback.message.answer_photo(
@@ -1230,7 +1232,8 @@ async def process_clarification_callback(callback: CallbackQuery, state: FSMCont
                 )
                 await status_msg.delete()
             except Exception:
-                await status_msg.edit_text(f"✅ Generated: {filename}")
+                model_display = model_used.replace("fal-ai/", "")
+                await status_msg.edit_text(f"✅ Generated with {model_display}")
         else:
             await status_msg.edit_text(f"🤖 {agent_response}")
             
