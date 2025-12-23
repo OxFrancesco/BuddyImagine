@@ -177,7 +177,7 @@ def get_agent() -> Any:
             raise
         
         _agent = Agent(
-            'openrouter:google/gemini-3-flash-preview',
+            'openrouter:openai/gpt-4o-mini',
             deps_type=dict,
             system_prompt=(
                 "You are an image generation assistant. You MUST use the provided tools to generate images.\n\n"
