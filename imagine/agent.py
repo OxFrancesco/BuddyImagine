@@ -7,7 +7,7 @@ from imagine.services.fal import FalService
 from imagine.services.r2 import R2Service
 
 if TYPE_CHECKING:
-    from pydantic_ai import RunContext
+    from pydantic_ai import CallContext as RunContext
 
 # Lazy agent initialization to avoid import errors when OPENROUTER_API_KEY is not set
 _agent: Any = None
@@ -156,7 +156,7 @@ def get_agent() -> Any:
     """
     global _agent
     if _agent is None:
-        from pydantic_ai import Agent, RunContext
+        from pydantic_ai import Agent
         
         _agent = Agent(
             'openrouter:anthropic/claude-haiku-4.5',
