@@ -1087,8 +1087,9 @@ async def handle_natural_message(message: Message, state: FSMContext):
                     caption=caption
                 )
                 await status_msg.delete()
-            except Exception:
-                await status_msg.edit_text(f"✅ Generated: {filename}")
+            except Exception as download_err:
+                logger.error(f"Failed to download/send image {filename}: {download_err}")
+                await status_msg.edit_text(f"✅ Generated: {filename}\n⚠️ Could not send image: {str(download_err)[:100]}")
         else:
             await status_msg.edit_text(f"🤖 {agent_response}")
             
