@@ -4,9 +4,20 @@ import sys
 import hmac
 import hashlib
 import uuid
+import sentry_sdk
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from aiogram import Bot, Dispatcher, types
+
+# Initialize Sentry for error tracking
+if os.getenv("SENTRY_DSN"):
+    sentry_sdk.init(
+        dsn=os.getenv("SENTRY_DSN"),
+        environment=os.getenv("ENVIRONMENT", "production"),
+        traces_sample_rate=0.1,
+        profiles_sample_rate=0.1,
+        send_default_pii=False,
+    )
 
 # Add the project root to sys.path so imports work
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -148,6 +159,12 @@ async def webhook_handler(request: Request):
         # Convert raw JSON to an aiogram Update object
         update = types.Update(**payload)
         
+        # Set Sentry user context for better error tracking
+        if update.message and update.message.from_user:
+            sentry_sdk.set_user({"id": str(update.message.from_user.id)})
+        elif update.callback_query and update.callback_query.from_user:
+            sentry_sdk.set_user({"id": str(update.callback_query.from_user.id)})
+        
         # Feed the update to the dispatcher
         await dp.feed_update(bot=bot, update=update)
         
@@ -157,5 +174,6 @@ async def webhook_handler(request: Request):
     except Exception as e:
         request_id = getattr(request.state, "request_id", "unknown")
         logger.error(f"[{request_id}] Error processing webhook: {e}")
+        sentry_sdk.capture_exception(e)
         # Return 200 even on error to prevent Telegram from retrying endlessly
         return {"status": "error", "message": "Internal error"}
