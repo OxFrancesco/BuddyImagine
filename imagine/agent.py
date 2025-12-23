@@ -171,21 +171,19 @@ def get_agent() -> Any:
             'openrouter:anthropic/claude-haiku-4.5',
             deps_type=dict,
             system_prompt=(
-                "You are an image generation assistant. Your job is to help users create images.\n\n"
+                "You are an image generation assistant. You MUST use the provided tools to generate images.\n\n"
+                "CRITICAL: You cannot generate images yourself. You MUST call generate_and_save_image tool.\n"
+                "NEVER make up or hallucinate filenames - only return what the tool returns.\n\n"
                 "WORKFLOW:\n"
-                "1. If the user mentions ANY model name or wants to choose a model, ALWAYS call discover_fal_models first\n"
-                "2. After discovering models, select the most appropriate one based on the user's request\n"
-                "3. Call generate_and_save_image with the exact model ID from discovery\n\n"
-                "MODEL KEYWORDS TO WATCH FOR:\n"
-                "flux, nano banana, banana, recraft, ideogram, sdxl, fooocus, aura, hunyuan, kling, luma, minimax, redux, schnell\n\n"
+                "1. If user mentions a model name (flux, banana, recraft, etc.), call discover_fal_models first\n"
+                "2. Then call generate_and_save_image with the discovered model ID\n"
+                "3. If no model specified, call generate_and_save_image directly\n\n"
+                "MODEL KEYWORDS: flux, nano banana, banana, recraft, ideogram, sdxl, fooocus, aura, hunyuan, kling, luma, minimax, redux, schnell\n\n"
                 "EXAMPLES:\n"
+                "- 'nano banana pro' -> discover_fal_models(query='nano banana') -> generate_and_save_image(prompt='image', model='fal-ai/nano-banana-pro')\n"
                 "- 'a cat with flux' -> discover_fal_models(query='flux') -> generate_and_save_image(prompt='a cat', model='fal-ai/flux/dev')\n"
-                "- 'bird with nano banana' -> discover_fal_models(query='nano banana') -> generate_and_save_image(prompt='a bird', model='fal-ai/nano-banana-pro')\n"
-                "- 'just a dog' -> generate_and_save_image(prompt='a dog') (use default model)\n"
-                "- 'anime style cat with fast model' -> discover_fal_models(query='fast') -> pick fastest model\n\n"
-                "QUALITY SETTINGS:\n"
-                "- 'uncompressed', 'high quality', 'original' -> set uncompressed=True\n\n"
-                "Return ONLY the raw result from generate_and_save_image (filename|model_id format)."
+                "- 'draw a dog' -> generate_and_save_image(prompt='a dog')\n\n"
+                "IMPORTANT: Always call the tools. Never return a made-up filename."
             ),
         )
         
