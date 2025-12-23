@@ -6,6 +6,7 @@ import io
 import logging
 from typing import Any
 from PIL import Image
+from pydantic_ai import RunContext
 from imagine.services.fal import FalService
 from imagine.services.r2 import R2Service
 
@@ -16,9 +17,8 @@ _agent: Any = None
 
 
 # Standalone tool functions for testing and direct use
-# Note: Using Any for ctx type to avoid runtime resolution issues with pydantic-ai
 async def discover_fal_models(
-    ctx: Any,
+    ctx: RunContext[dict],
     query: str = "",
     model_type: str | None = None
 ) -> str:
@@ -51,7 +51,7 @@ async def discover_fal_models(
     return result
 
 
-async def search_available_models(ctx: Any, query: str = "") -> str:
+async def search_available_models(ctx: RunContext[dict], query: str = "") -> str:
     """
     Search available image generation models by name or keyword.
     (Alias for discover_fal_models - prefer using discover_fal_models directly)
@@ -73,7 +73,7 @@ async def search_available_models(ctx: Any, query: str = "") -> str:
     return result
 
 
-async def ask_user_clarification(ctx: Any, question: str, options: list[str] | None = None) -> str:
+async def ask_user_clarification(ctx: RunContext[dict], question: str, options: list[str] | None = None) -> str:
     """
     Ask the user a clarifying question when you need more information.
     Use when multiple models match or the request is ambiguous.
@@ -89,7 +89,7 @@ async def ask_user_clarification(ctx: Any, question: str, options: list[str] | N
 
 
 async def generate_and_save_image(
-    ctx: Any,
+    ctx: RunContext[dict],
     prompt: str,
     model: str | None = None,
     model_hint: str | None = None,
