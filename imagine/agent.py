@@ -3,21 +3,22 @@ from __future__ import annotations
 import os
 import uuid
 import io
-from typing import Any, TYPE_CHECKING
+import logging
+from typing import Any
 from PIL import Image
 from imagine.services.fal import FalService
 from imagine.services.r2 import R2Service
 
-if TYPE_CHECKING:
-    from pydantic_ai import RunContext
+logger = logging.getLogger(__name__)
 
 # Lazy agent initialization to avoid import errors when OPENROUTER_API_KEY is not set
 _agent: Any = None
 
 
 # Standalone tool functions for testing and direct use
+# Note: Using Any for ctx type to avoid runtime resolution issues with pydantic-ai
 async def discover_fal_models(
-    ctx: "RunContext[dict]",
+    ctx: Any,
     query: str = "",
     model_type: str | None = None
 ) -> str:
@@ -50,7 +51,7 @@ async def discover_fal_models(
     return result
 
 
-async def search_available_models(ctx: "RunContext[dict]", query: str = "") -> str:
+async def search_available_models(ctx: Any, query: str = "") -> str:
     """
     Search available image generation models by name or keyword.
     (Alias for discover_fal_models - prefer using discover_fal_models directly)
@@ -72,7 +73,7 @@ async def search_available_models(ctx: "RunContext[dict]", query: str = "") -> s
     return result
 
 
-async def ask_user_clarification(ctx: "RunContext[dict]", question: str, options: list[str] | None = None) -> str:
+async def ask_user_clarification(ctx: Any, question: str, options: list[str] | None = None) -> str:
     """
     Ask the user a clarifying question when you need more information.
     Use when multiple models match or the request is ambiguous.
@@ -88,7 +89,7 @@ async def ask_user_clarification(ctx: "RunContext[dict]", question: str, options
 
 
 async def generate_and_save_image(
-    ctx: "RunContext[dict]",
+    ctx: Any,
     prompt: str,
     model: str | None = None,
     model_hint: str | None = None,
@@ -158,7 +159,13 @@ def get_agent() -> Any:
     """
     global _agent
     if _agent is None:
-        from pydantic_ai import Agent
+        logger.info("Initializing pydantic-ai agent...")
+        try:
+            from pydantic_ai import Agent
+            logger.info("Successfully imported pydantic_ai.Agent")
+        except ImportError as e:
+            logger.error(f"Failed to import pydantic_ai: {e}")
+            raise
         
         _agent = Agent(
             'openrouter:anthropic/claude-haiku-4.5',
@@ -184,10 +191,16 @@ def get_agent() -> Any:
         
         # Register the standalone tool functions with the agent
         # Using the module-level functions for consistency with tests
-        _agent.tool(discover_fal_models)
-        _agent.tool(search_available_models)
-        _agent.tool(ask_user_clarification)
-        _agent.tool(generate_and_save_image)
+        logger.info("Registering agent tools...")
+        try:
+            _agent.tool(discover_fal_models)
+            _agent.tool(search_available_models)
+            _agent.tool(ask_user_clarification)
+            _agent.tool(generate_and_save_image)
+            logger.info("Agent tools registered successfully")
+        except Exception as e:
+            logger.error(f"Failed to register agent tools: {e}")
+            raise
 
     return _agent
 
