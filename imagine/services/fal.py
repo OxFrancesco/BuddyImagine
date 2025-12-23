@@ -291,11 +291,23 @@ class FalService:
         
         raise last_exception or Exception("Generation failed")
 
+    # Models known to be slow (>30s generation time) - use queue API
+    SLOW_MODELS = {
+        "fal-ai/nano-banana-pro",
+        "fal-ai/recraft/v3",
+        "fal-ai/ideogram/v2",
+    }
+
     async def _execute_generation(
         self, url: str, headers: dict[str, str], payload: dict[str, str | bool | float | int]
     ) -> bytes:
         """Execute a single generation request."""
         logger.info(f"Sending request to FAL: {url}")
+        
+        # Check if this is a slow model - use queue API instead
+        model_id = url.replace(self.base_url + "/", "")
+        if model_id in self.SLOW_MODELS:
+            return await self._execute_queue_generation(model_id, headers, payload)
         
         timeout = aiohttp.ClientTimeout(total=120)  # 2 minute timeout for generation
         
@@ -318,26 +330,105 @@ class FalService:
                     return await response.read()
                 
                 data = await response.json()
+                return await self._extract_image_from_response(data, session)
+
+    async def _execute_queue_generation(
+        self, model_id: str, headers: dict[str, str], payload: dict[str, str | bool | float | int]
+    ) -> bytes:
+        """Execute generation using FAL queue API for slow models."""
+        # Remove sync_mode for queue API
+        queue_payload = {k: v for k, v in payload.items() if k != "sync_mode"}
+        
+        queue_url = f"https://queue.fal.run/{model_id}"
+        logger.info(f"Using queue API for slow model: {model_id}")
+        
+        timeout = aiohttp.ClientTimeout(total=300)  # 5 minute total timeout for queue
+        
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            # Submit job to queue
+            async with session.post(queue_url, json=queue_payload, headers=headers) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"FAL Queue API Error: {response.status} - {error_text}")
+                    raise Exception(f"FAL Queue API Error: {response.status}")
                 
-                if "images" in data and len(data["images"]) > 0:
-                    image_url = data["images"][0]["url"]
+                queue_data = await response.json()
+                request_id = queue_data.get("request_id")
+                status_url = queue_data.get("status_url")
+                
+                if not request_id:
+                    raise Exception("No request_id in queue response")
+                
+                logger.info(f"Job queued with request_id: {request_id}")
+            
+            # Poll for completion
+            poll_url = f"https://queue.fal.run/{model_id}/requests/{request_id}/status"
+            max_polls = 60  # Max 60 polls
+            poll_interval = 2.0  # Start with 2 second intervals
+            
+            for poll_num in range(max_polls):
+                await asyncio.sleep(poll_interval)
+                
+                async with session.get(poll_url, headers=headers) as status_response:
+                    # 200 = completed, 202 = still processing
+                    if status_response.status not in (200, 202):
+                        logger.warning(f"Status check failed: {status_response.status}")
+                        continue
                     
-                    # Check if it's a Data URI
-                    if image_url.startswith("data:image"):
-                        try:
-                            _, encoded = image_url.split(",", 1)
-                            return base64.b64decode(encoded)
-                        except Exception as e:
-                            raise Exception(f"Failed to decode image data: {e}")
+                    status_data = await status_response.json()
+                    status = status_data.get("status")
                     
-                    # Download the image
-                    async with session.get(image_url) as img_response:
-                        if img_response.status == 200:
-                            return await img_response.read()
-                        else:
-                            raise Exception(f"Failed to download generated image")
+                    # 202 with no explicit status means still in progress
+                    if status_response.status == 202 and not status:
+                        status = "IN_PROGRESS"
+                    
+                    logger.debug(f"Poll {poll_num + 1}: status={status}")
+                    
+                    if status == "COMPLETED":
+                        # Get the result
+                        result_url = f"https://queue.fal.run/{model_id}/requests/{request_id}"
+                        async with session.get(result_url, headers=headers) as result_response:
+                            if result_response.status != 200:
+                                raise Exception(f"Failed to get result: {result_response.status}")
+                            
+                            result_data = await result_response.json()
+                            return await self._extract_image_from_response(result_data, session)
+                    
+                    elif status == "FAILED":
+                        error = status_data.get("error", "Unknown error")
+                        raise Exception(f"Generation failed: {error}")
+                    
+                    elif status in ("IN_QUEUE", "IN_PROGRESS"):
+                        # Increase poll interval gradually (up to 5s)
+                        poll_interval = min(poll_interval + 0.5, 5)
+                        continue
+                    
+                    else:
+                        logger.warning(f"Unknown status: {status}")
+            
+            raise Exception("Generation timed out waiting for queue")
+
+    async def _extract_image_from_response(self, data: dict, session: aiohttp.ClientSession) -> bytes:
+        """Extract image bytes from FAL response data."""
+        if "images" in data and len(data["images"]) > 0:
+            image_url = data["images"][0]["url"]
+            
+            # Check if it's a Data URI
+            if image_url.startswith("data:image"):
+                try:
+                    _, encoded = image_url.split(",", 1)
+                    return base64.b64decode(encoded)
+                except Exception as e:
+                    raise Exception(f"Failed to decode image data: {e}")
+            
+            # Download the image
+            async with session.get(image_url) as img_response:
+                if img_response.status == 200:
+                    return await img_response.read()
                 else:
-                    raise Exception("No image in response")
+                    raise Exception(f"Failed to download generated image")
+        else:
+            raise Exception("No image in response")
 
     async def generate_image_to_image(
         self, 
