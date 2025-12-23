@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import uuid
 import io
@@ -7,7 +9,7 @@ from imagine.services.fal import FalService
 from imagine.services.r2 import R2Service
 
 if TYPE_CHECKING:
-    from pydantic_ai import CallContext as RunContext
+    from pydantic_ai import RunContext
 
 # Lazy agent initialization to avoid import errors when OPENROUTER_API_KEY is not set
 _agent: Any = None
