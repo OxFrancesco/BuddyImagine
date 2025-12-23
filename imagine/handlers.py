@@ -1023,8 +1023,11 @@ async def handle_natural_message(message: Message, state: FSMContext):
         
         # Run agent with history
         deps = {'fal_service': fal_service, 'r2_service': r2_service}
+        logger.info(f"Running agent with input: {original_text}")
         result = await get_agent().run(original_text, deps=deps, message_history=message_history)
         agent_response = str(result.output)
+        logger.info(f"Agent response: {agent_response}")
+        logger.info(f"Agent result details - all_messages: {len(result.all_messages())}, new_messages: {len(result.new_messages())}")
         
         # Handle clarification requests from the agent
         if agent_response.startswith("CLARIFICATION_NEEDED|"):

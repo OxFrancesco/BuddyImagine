@@ -35,6 +35,7 @@ async def discover_fal_models(
         List of matching models with IDs, names, descriptions, and estimated costs.
         Use the exact model ID in generate_and_save_image.
     """
+    logger.info(f"discover_fal_models called with query='{query}', model_type={model_type}")
     fal_service: FalService = ctx.deps['fal_service']
     matches = fal_service.search_models(query, limit=5, model_type=model_type)
     
@@ -109,6 +110,7 @@ async def generate_and_save_image(
     Returns:
         The filename and model used, separated by |
     """
+    logger.info(f"generate_and_save_image called with prompt='{prompt}', model={model}, model_hint={model_hint}")
     fal_service: FalService = ctx.deps['fal_service']
     r2_service: R2Service = ctx.deps['r2_service']
     
