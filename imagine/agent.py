@@ -176,8 +176,12 @@ def get_agent() -> Any:
             logger.error(f"Failed to import pydantic_ai: {e}")
             raise
         
+        # Model configurable via environment variable
+        model_name = os.getenv('AGENT_MODEL', 'openrouter:anthropic/claude-sonnet-4.5')
+        logger.info(f"Using model: {model_name}")
+        
         _agent = Agent(
-            'openrouter:openai/gpt-4o-mini',
+            model_name,
             deps_type=dict,
             system_prompt=(
                 "You are an image generation assistant. You MUST use the provided tools to generate images.\n\n"
