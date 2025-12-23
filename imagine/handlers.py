@@ -1094,7 +1094,7 @@ async def handle_natural_message(message: Message, state: FSMContext):
         error_msg = str(e)
         if len(error_msg) > 500:
             error_msg = error_msg[:500] + "..."
-        await status_msg.edit_text(f"❌ Error: {error_msg}\n\n💡 Tip: Use /generate <prompt> for direct generation.")
+        await status_msg.edit_text(f"❌ Error: {error_msg}\n\n💡 Tip: Use /generate &lt;prompt&gt; for direct generation.")
 
 
 @router.callback_query(F.data.startswith("clarify:"))
