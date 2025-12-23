@@ -38,4 +38,18 @@ export default defineSchema({
     })
         .index("by_telegram_id", ["telegram_id"])
         .index("by_type", ["type"]),
+
+    payments: defineTable({
+        telegram_id: v.number(),
+        amount_cents: v.number(), // Amount in smallest currency unit (cents)
+        currency: v.string(), // ISO 4217 currency code (e.g., "USD")
+        credits_added: v.float64(),
+        package_id: v.string(),
+        telegram_payment_charge_id: v.string(),
+        provider_payment_charge_id: v.string(),
+        status: v.string(), // "completed" | "refunded"
+        created_at: v.number(),
+    })
+        .index("by_telegram_id", ["telegram_id"])
+        .index("by_charge_id", ["telegram_payment_charge_id"]),
 });

@@ -4,7 +4,7 @@ from typing import cast
 import io
 from PIL import Image
 from pydantic_ai import RunContext
-from imagine.agent import generate_and_save_image, search_available_models, ask_user_clarification
+from imagine.agent import generate_and_save_image, search_available_models, ask_user_clarification, discover_fal_models
 from imagine.services.fal import FalService
 
 
@@ -14,6 +14,80 @@ def create_valid_image_bytes() -> bytes:
     img_byte_arr = io.BytesIO()
     img.save(img_byte_arr, format='JPEG')
     return img_byte_arr.getvalue()
+
+
+class TestDiscoverFalModels:
+    @pytest.mark.asyncio
+    async def test_discover_models_with_query(self):
+        mock_fal = MagicMock(spec=FalService)
+        mock_fal.search_models.return_value = [
+            {"id": "fal-ai/flux/dev", "name": "Flux Dev", "description": "Flux.1 Dev - High quality", "type": "text-to-image"}
+        ]
+        mock_fal.estimate_cost.return_value = 0.03
+
+        mock_ctx = MagicMock()
+        mock_ctx.deps = {"fal_service": mock_fal}
+
+        result = await discover_fal_models(cast(RunContext[dict], mock_ctx), "flux")
+
+        assert "flux" in result.lower()
+        assert "fal-ai/flux/dev" in result
+        assert "ID=" in result
+        assert "Cost=" in result
+        mock_fal.search_models.assert_called_once_with("flux", limit=5, model_type=None)
+
+    @pytest.mark.asyncio
+    async def test_discover_models_with_type_filter(self):
+        mock_fal = MagicMock(spec=FalService)
+        mock_fal.search_models.return_value = [
+            {"id": "fal-ai/flux/dev/image-to-image", "name": "Flux Dev Img2Img", "description": "Image to image", "type": "image-to-image"}
+        ]
+        mock_fal.estimate_cost.return_value = 0.04
+
+        mock_ctx = MagicMock()
+        mock_ctx.deps = {"fal_service": mock_fal}
+
+        result = await discover_fal_models(
+            cast(RunContext[dict], mock_ctx), 
+            "flux", 
+            model_type="image-to-image"
+        )
+
+        assert "fal-ai/flux/dev/image-to-image" in result
+        mock_fal.search_models.assert_called_once_with("flux", limit=5, model_type="image-to-image")
+
+    @pytest.mark.asyncio
+    async def test_discover_models_no_match(self):
+        mock_fal = MagicMock(spec=FalService)
+        mock_fal.search_models.return_value = []
+        mock_fal.KNOWN_MODELS = [
+            {"id": "fal-ai/fast-sdxl", "name": "Fast SDXL", "description": "Fast"},
+            {"id": "fal-ai/flux/dev", "name": "Flux Dev", "description": "Flux"}
+        ]
+
+        mock_ctx = MagicMock()
+        mock_ctx.deps = {"fal_service": mock_fal}
+
+        result = await discover_fal_models(cast(RunContext[dict], mock_ctx), "nonexistent")
+
+        assert "No models found" in result
+        assert "nonexistent" in result
+
+    @pytest.mark.asyncio
+    async def test_discover_models_includes_cost_estimate(self):
+        mock_fal = MagicMock(spec=FalService)
+        mock_fal.search_models.return_value = [
+            {"id": "fal-ai/flux/dev", "name": "Flux Dev", "description": "High quality", "type": "text-to-image"},
+        ]
+        mock_fal.estimate_cost.return_value = 0.03  # $0.03 -> ~0.345 credits
+
+        mock_ctx = MagicMock()
+        mock_ctx.deps = {"fal_service": mock_fal}
+
+        result = await discover_fal_models(cast(RunContext[dict], mock_ctx), "flux")
+
+        assert "credits" in result.lower()
+        mock_fal.estimate_cost.assert_called_with("fal-ai/flux/dev")
 
 
 class TestSearchAvailableModels:

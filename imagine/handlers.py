@@ -47,13 +47,15 @@ async def cmd_start(message: Message):
 
     await message.answer(
         "Hello! I can generate images for you using FAL AI.\n\n"
-        "**Commands:**\n"
+        "<b>Commands:</b>\n"
         "/imagine &lt;prompt&gt; - Text-to-image generation\n"
         "/remix &lt;prompt&gt; - Remix your last image with a new prompt\n"
         "/generate &lt;prompt&gt; - Create an image (legacy)\n"
         "/models [query] - List or search models\n"
         "/setmodel &lt;model_id&gt; - Set default model\n"
-        "/credits - View balance & transactions\n"
+        "/credits - View balance &amp; transactions\n"
+        "/buy - Purchase credits\n"
+        "/payments - View payment history\n"
         "/settings - View/update preferences\n"
         "/clear - Clear conversation history\n"
         "/help - Show this message\n\n"
@@ -426,17 +428,10 @@ async def run_generation_safe(message: Message, prompt: str, model_id: str | Non
     r2_filename = ""
 
     try:
-        # Determine Model ID if not set
+        # Determine Model ID - respect user's explicit choice, then default model, then fallback
+        # NOTE: Removed keyword-based model detection as it overrode user preferences
+        # Model selection should be done via "using <model>" syntax or /setmodel command
         resolved_model: str = model_id or user_settings.get("default_model") or "fal-ai/fast-sdxl"
-        
-        if not model_id:
-            # Simple keyword overrides (legacy support if user didn't use "using")
-            if "flux" in prompt.lower():
-                resolved_model = "fal-ai/flux/dev"
-            elif "video" in prompt.lower():
-                resolved_model = "fal-ai/hunyuan-video-v1.5/text-to-video"
-            elif "fast" in prompt.lower() and "flux" not in prompt.lower():
-                resolved_model = "fal-ai/fast-sdxl"
         
         # Estimate Cost with 15% markup
         api_cost = fal_service.estimate_cost(resolved_model)

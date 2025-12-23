@@ -42,6 +42,24 @@ class CreditSummaryDict(TypedDict):
     generation_count: int
 
 
+class PaymentDict(TypedDict):
+    telegram_id: int
+    amount_cents: int
+    currency: str
+    credits_added: float
+    package_id: str
+    telegram_payment_charge_id: str
+    provider_payment_charge_id: str
+    status: str
+    created_at: int
+
+
+class PaymentStatsDict(TypedDict):
+    total_payments: int
+    total_spent_cents: int
+    total_credits_purchased: float
+
+
 class MessageDict(TypedDict):
     role: str
     content: str
@@ -216,3 +234,54 @@ class ConvexService:
         """Get the last generated image filename for a user."""
         result = self.client.query("users:getLastGeneratedImage", {"telegram_id": telegram_id})
         return str(result) if result else None
+
+    # Payment Methods
+    def record_payment(
+        self,
+        telegram_id: int,
+        amount_cents: int,
+        currency: str,
+        credits_added: float,
+        package_id: str,
+        telegram_payment_charge_id: str,
+        provider_payment_charge_id: str,
+    ) -> str:
+        """Record a successful payment."""
+        return str(self.client.mutation("payments:recordPayment", {
+            "telegram_id": telegram_id,
+            "amount_cents": amount_cents,
+            "currency": currency,
+            "credits_added": credits_added,
+            "package_id": package_id,
+            "telegram_payment_charge_id": telegram_payment_charge_id,
+            "provider_payment_charge_id": provider_payment_charge_id,
+        }))
+
+    def get_payment_history(self, telegram_id: int, limit: int = 10) -> list[PaymentDict]:
+        """Get payment history for a user."""
+        result = self.client.query("payments:getPaymentHistory", {
+            "telegram_id": telegram_id,
+            "limit": limit,
+        })
+        return list(result) if result else []  # type: ignore
+
+    def get_payment_by_charge_id(self, telegram_payment_charge_id: str) -> PaymentDict | None:
+        """Get a payment by its Telegram charge ID."""
+        result = self.client.query("payments:getPaymentByChargeId", {
+            "telegram_payment_charge_id": telegram_payment_charge_id,
+        })
+        return dict(result) if result else None  # type: ignore
+
+    def mark_payment_refunded(self, telegram_payment_charge_id: str) -> dict[str, bool]:
+        """Mark a payment as refunded."""
+        result = self.client.mutation("payments:markPaymentRefunded", {
+            "telegram_payment_charge_id": telegram_payment_charge_id,
+        })
+        return dict(result) if result else {"success": False}  # type: ignore
+
+    def get_payment_stats(self, telegram_id: int) -> PaymentStatsDict | None:
+        """Get payment statistics for a user."""
+        result = self.client.query("payments:getPaymentStats", {
+            "telegram_id": telegram_id,
+        })
+        return dict(result) if result else None  # type: ignore
